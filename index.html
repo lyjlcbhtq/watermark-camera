@@ -9,6 +9,9 @@
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='100' fill='%231a1a2e'/%3E%3Ctext x='256' y='320' text-anchor='middle' font-size='200'%3E📷%3C/text%3E%3C/svg%3E">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <title>简单水印相机</title>
 
   <style>
@@ -730,8 +733,8 @@
     <div class="setting-group">
       <div class="setting-group-title">字体大小</div>
       <div class="option-group" id="size-options">
-        <button class="option-btn" data-size="sm">小</button>
-        <button class="option-btn active" data-size="md">中</button>
+        <button class="option-btn active" data-size="sm">小</button>
+        <button class="option-btn" data-size="md">中</button>
         <button class="option-btn" data-size="lg">大</button>
         <button class="option-btn" data-size="xl">超大</button>
       </div>
@@ -812,7 +815,7 @@
     usePoi: false,          // 是否使用附近地点
     position: 'tl',
     color: 'white',
-    size: 'md',
+    size: 'sm',
   };
 
   // 相册
@@ -1674,6 +1677,9 @@
   });
 
   init();
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js?v=' + Date.now()).catch(function(){});
+  }
 })();
 </script>
 </body>
