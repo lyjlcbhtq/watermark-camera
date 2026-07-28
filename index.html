@@ -75,10 +75,12 @@
       text-shadow: 0 1px 4px rgba(0,0,0,0.8), 0 0 2px rgba(0,0,0,0.5);
       letter-spacing: 0.5px;
       line-height: 1.3;
-      max-width: 90vw;
+      max-width: 85vw;
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
       overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+      word-break: break-all;
     }
     .wm-size-sm .wm-line { font-size: 13px; }
     .wm-size-md .wm-line { font-size: 16px; }
@@ -1301,6 +1303,10 @@
 
     // Start drawing watermark frames
     isRecording = true;
+    // 录像时自动用小字，避免水印太大
+    const _ol = $('watermark-overlay');
+    ['sm','md','lg','xl'].forEach(s => _ol.classList.remove('wm-size-' + s));
+    _ol.classList.add('wm-size-sm');
 
     function drawFrame() {
       if (!recordingCtx || !recordingCanvas) return;
