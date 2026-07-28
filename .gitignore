@@ -1,0 +1,7 @@
+# 服务器脚本
+*.ps1
+tunnel-url.txt
+server.log
+
+# Git
+.git/
