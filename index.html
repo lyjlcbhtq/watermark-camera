@@ -384,6 +384,13 @@
       color: #fff;
     }
     #custom-text-input::placeholder { color: rgba(255,255,255,0.3); }
+    #manual-addr-input::placeholder { color: rgba(255,255,255,0.3); }
+    .setting-action-btn {
+      padding:7px 16px; border-radius:16px; font-size:13px; font-weight:600;
+      background:#007aff; color:#fff; transition:all 0.2s;
+    }
+    .setting-action-btn:active { transform:scale(0.94); opacity:0.8; }
+    .setting-hint { font-size:13px; color:rgba(255,255,255,0.4); line-height:1.4; word-break:break-all; }
 
     /* ==================== 相册面板 ==================== */
     #gallery-grid {
@@ -657,6 +664,27 @@
     </div>
 
     <div class="setting-group">
+      <div class="setting-group-title">位置设置</div>
+      <div class="setting-row">
+        <span class="setting-label">手动输入地址</span>
+        <div class="toggle" id="toggle-manual-addr"><div class="knob"></div></div>
+      </div>
+      <div class="setting-row">
+        <div style="flex:1">
+          <span class="setting-label">地址内容</span>
+        </div>
+        <input id="manual-addr-input" type="text" placeholder="例如：北京市朝阳区..." maxlength="60" style="width:auto;flex:1;margin-left:12px;background:rgba(255,255,255,0.08);border-radius:12px;padding:10px 14px;font-size:15px;color:#fff;">
+      </div>
+      <div class="setting-row">
+        <span class="setting-label">自动定位</span>
+        <button class="setting-action-btn" id="btn-refresh-location">刷新定位</button>
+      </div>
+      <div class="setting-row" style="border-bottom:none;flex-wrap:wrap;">
+        <span class="setting-hint" id="location-status-hint">等待定位...</span>
+      </div>
+    </div>
+
+    <div class="setting-group">
       <div class="setting-group-title">水印位置</div>
       <div class="option-group" id="position-options">
         <button class="option-btn active" data-pos="tl">左上</button>
@@ -755,7 +783,9 @@
     showLocation: true,
     showCustom: false,
     customText: '',
-    position: 'tl',  // tl, tr, bl, br
+    useManualAddr: false,
+    manualAddr: '',
+    position: 'tl',
     color: 'white',
     size: 'md',
   };
@@ -800,7 +830,8 @@
 
     setEl('wm-time', wmState.showTime ? formatTime() : '');
     setEl('wm-date', wmState.showDate ? formatDate() : '');
-    setEl('wm-location', wmState.showLocation ? (locationAddress || (locationError ? '📍 定位失败' : '📍 定位中...')) : '');
+    const locText = wmState.useManualAddr ? wmState.manualAddr : (locationAddress || (locationError ? '定位失败' : '定位中...'));
+    setEl('wm-location', wmState.showLocation ? locText : '');
     setEl('wm-custom', wmState.showCustom && wmState.customText ? wmState.customText : '');
 
     // 颜色 / 大小
@@ -810,53 +841,129 @@
 
     ['sm','md','lg','xl'].forEach(s => overlay.classList.remove(`wm-size-${s}`));
     overlay.classList.add(`wm-size-${wmState.size}`);
+
+    updateLocationHint();
   }
 
   // ==================== 位置获取 ====================
+  // ==================== 位置获取（改进版） ====================
   function startLocation() {
     if (!navigator.geolocation) {
+      showToast('⚠️ 浏览器不支持定位');
       locationError = true;
       updateWatermarkOverlay();
       return;
     }
-    // 先显示默认占位
     locationAddress = '';
     locationError = false;
     updateWatermarkOverlay();
 
+    // 用 watchPosition 持续获取（比 getCurrentPosition 更稳定）
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
         currentLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-        // 逆地理编码
+        // 先显示坐标（快速）
+        locationAddress = `${currentLocation.lat.toFixed(4)},${currentLocation.lng.toFixed(4)}`;
+        updateWatermarkOverlay();
+
+        // 尝试逆地理编码获取地址（多个服务，谁先返回用谁）
+        const geoPromises = [];
+
+        // 服务1: Nominatim (OpenStreetMap)
+        geoPromises.push(
+          fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${currentLocation.lat}&lon=${currentLocation.lng}&accept-language=zh&zoom=18`,
+            { headers: { 'User-Agent': 'WatermarkCamera/1.0' } })
+            .then(r => r.ok ? r.json() : Promise.reject('Nominatim'))
+            .then(data => {
+              const ad = data.address;
+              if (ad) {
+                const parts = [ad.city || ad.town || ad.county || ad.state_district, ad.district || ad.suburb || '', ad.road || ad.street || ''].filter(Boolean);
+                return parts.length ? parts.join(' ') : (data.display_name?.split(',')[0] || null);
+              }
+              return null;
+            })
+            .catch(() => null)
+        );
+
+        // 服务2: ip-api.com（在国内通常可访问，反向定位较准）
+        geoPromises.push(
+          fetch(`http://ip-api.com/json/${currentLocation.lat},${currentLocation.lng}?lang=zh-CN&fields=status,regionName,city,district,zip,query`)
+            .then(r => r.ok ? r.json() : Promise.reject('ip-api'))
+            .then(data => {
+              if (data.status === 'success') {
+                const parts = [data.regionName, data.city, data.district].filter(Boolean);
+                return parts.length ? parts.join(' ') : null;
+              }
+              return null;
+            })
+            .catch(() => null)
+        );
+
+        // 服务3: bigdatacloud（免费备用）
+        geoPromises.push(
+          fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${currentLocation.lat}&longitude=${currentLocation.lng}&localityLanguage=zh`)
+            .then(r => r.ok ? r.json() : Promise.reject('bigdata'))
+            .then(data => {
+              const parts = [data.city || data.locality, data.principalSubdivision || ''].filter(Boolean);
+              return parts.length ? parts.join(' ') : null;
+            })
+            .catch(() => null)
+        );
+
+        // 谁先返回有效地址就用谁
         try {
-          const resp = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${currentLocation.lat}&lon=${currentLocation.lng}&accept-language=zh`,
-            { headers: { 'User-Agent': 'SimpleWatermarkCamera/1.0' } }
-          );
-          if (!resp.ok) throw new Error('HTTP ' + resp.status);
-          const data = await resp.json();
-          locationAddress = data.display_name || `${currentLocation.lat.toFixed(4)},${currentLocation.lng.toFixed(4)}`;
-          // 简化为：城市 + 区 + 街道
-          const ad = data.address;
-          if (ad) {
-            const parts = [ad.city || ad.town || ad.county, ad.district || '', ad.road || ''].filter(Boolean);
-            if (parts.length) locationAddress = parts.join(' ');
-            else locationAddress = data.display_name?.split(',')[0] || `${currentLocation.lat.toFixed(4)},${currentLocation.lng.toFixed(4)}`;
+          const results = await Promise.allSettled(geoPromises);
+          for (const r of results) {
+            if (r.status === 'fulfilled' && r.value && r.value.length > 2) {
+              locationAddress = r.value;
+              break;
+            }
           }
-        } catch (e) {
-          locationAddress = `${currentLocation.lat.toFixed(4)},${currentLocation.lng.toFixed(4)}`;
-        }
+        } catch (e) { /* 保持坐标显示 */ }
+
         locationError = false;
         updateWatermarkOverlay();
+        updateLocationHint();
       },
       (err) => {
         console.warn('定位失败:', err.message);
+        if (err.code === 1) {
+          locationAddress = '📍 定位被拒绝';
+          showToast('⚠️ 请在 Safari 设置中允许定位权限');
+        } else if (err.code === 2) {
+          locationAddress = '📍 无法获取位置(GPS)';
+        } else if (err.code === 3) {
+          locationAddress = '📍 定位超时';
+          // 超时后重试一次
+          setTimeout(startLocation, 3000);
+          return;
+        }
         locationError = true;
-        locationAddress = '';
         updateWatermarkOverlay();
+        updateLocationHint();
       },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 120000 }
     );
+  }
+
+  // 手动刷新位置（给用户一个重新定位的按钮）
+  function refreshLocation() {
+    showToast('正在重新定位...');
+    startLocation();
+  }
+
+  function updateLocationHint() {
+    const hint = $('location-status-hint');
+    if (!hint) return;
+    if (wmState.useManualAddr) {
+      hint.textContent = '手动模式: ' + (wmState.manualAddr || '未输入地址');
+    } else if (locationAddress) {
+      hint.textContent = 'GPS: ' + locationAddress;
+    } else if (locationError) {
+      hint.textContent = '定位失败，试试手动输入地址';
+    } else {
+      hint.textContent = '正在获取位置...';
+    }
   }
 
   // ==================== 相机初始化 ====================
@@ -1109,11 +1216,11 @@
       container.appendChild(vid);
     }
 
-    // 保存按钮
+    // 保存按钮 - 用分享方式保存到相册（iOS 推荐方式）
     const saveBtn = document.createElement('button');
     saveBtn.className = 'action-btn primary';
     saveBtn.innerHTML = '💾 保存到相册';
-    saveBtn.onclick = () => saveToGallery(item);
+    saveBtn.onclick = () => saveToAlbum(item);
     actions.appendChild(saveBtn);
 
     // 分享按钮
@@ -1123,17 +1230,54 @@
     shareBtn.onclick = () => shareMedia(item);
     actions.appendChild(shareBtn);
 
+    // 提示
+    const tip = document.createElement('div');
+    tip.style.cssText = 'text-align:center;font-size:12px;color:rgba(255,255,255,0.35);padding-top:4px;';
+    tip.textContent = 'iPhone 点「保存」→ 选择「存储到照片」即可存入相册';
+    actions.appendChild(tip);
+
     modal.classList.add('show');
   }
 
-  function saveToGallery(item) {
-    // 在 PWA 中，我们通过下载保存
+  // iOS 保存到相册（通过 Share API，用户选"存储到照片"）
+  async function saveToAlbum(item) {
+    if (!navigator.share) {
+      // 不支持分享，用下载方式
+      downloadFile(item);
+      return;
+    }
+    try {
+      const ext = item.type === 'photo' ? '.jpg' : '.mp4';
+      const mime = item.type === 'photo' ? 'image/jpeg' : (item.blob.type || 'video/mp4');
+      const file = new File([item.blob], `水印_${formatDate()}_${formatTime()}${ext}`, { type: mime });
+      await navigator.share({
+        files: [file],
+        title: '简单水印相机',
+        text: '水印照片/视频'
+      });
+      showToast('✅ 已分享，选择「存储到照片」保存');
+    } catch (e) {
+      if (e.name !== 'AbortError') {
+        downloadFile(item);
+      }
+    }
+  }
+
+  function downloadFile(item) {
     const a = document.createElement('a');
     a.href = item.url;
     const ext = item.type === 'photo' ? '.jpg' : '.mp4';
     a.download = `水印_${new Date().toISOString().slice(0,19).replace(/[:-]/g,'')}${ext}`;
     document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
+    showToast('✅ 已保存（在"文件"App中可找到）');
+  }
+
+  function saveToGallery(item) {
+    // 兼容旧调用
+    saveToAlbum(item);
+  }
     document.body.removeChild(a);
     showToast('✅ 已保存到下载');
   }
@@ -1246,6 +1390,27 @@
     $('custom-text-input').addEventListener('input', (e) => {
       wmState.customText = e.target.value.trim();
       updateWatermarkOverlay();
+    });
+
+    // 手动地址开关
+    $('toggle-manual-addr').addEventListener('click', () => {
+      wmState.useManualAddr = !wmState.useManualAddr;
+      $('toggle-manual-addr').classList.toggle('on', wmState.useManualAddr);
+      if (wmState.useManualAddr && $('manual-addr-input').value.trim()) {
+        wmState.manualAddr = $('manual-addr-input').value.trim();
+      }
+      updateWatermarkOverlay();
+    });
+
+    // 手动地址输入
+    $('manual-addr-input').addEventListener('input', (e) => {
+      wmState.manualAddr = e.target.value.trim();
+      if (wmState.useManualAddr) updateWatermarkOverlay();
+    });
+
+    // 刷新定位
+    $('btn-refresh-location').addEventListener('click', () => {
+      refreshLocation();
     });
 
     // 位置选择
