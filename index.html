@@ -933,28 +933,28 @@
           return parts.length ? parts.join(' ') : fallback || null;
         }
 
-        // 服务1: 高德地图（GPS转GCJ-02坐标后再查询，避免偏移）
+        // 服务1: 高德地图（先转换坐标再查询）
         const gcj = wgs84ToGcj02(currentLocation.lat, currentLocation.lng);
+        window._lastGpsCoord = `GPS:${currentLocation.lat.toFixed(4)},${currentLocation.lng.toFixed(4)} → GCJ:${gcj.lat.toFixed(4)},${gcj.lng.toFixed(4)}`;
         geoPromises.push(
           fetch(`https://restapi.amap.com/v3/geocode/regeo?output=JSON&location=${gcj.lng},${gcj.lat}&key=${AMAP_KEY}&radius=500&extensions=all`,
             { signal: AbortSignal.timeout(8000) })
             .then(r => r.ok ? r.json() : null)
             .then(d => {
               if (d?.status === '1' && d.regeocode) {
+                window._geoSource = '高德';
                 const rg = d.regeocode;
                 const ac = rg.addressComponent;
-                // 构建详细地址: 省市区 + 街道 + 门牌号 + 最近建筑
                 const parts = [];
                 if (ac.province && ac.province !== ac.city) parts.push(ac.province);
                 if (ac.city) parts.push(ac.city.replace(/市$/, ''));
                 if (ac.district) parts.push(ac.district);
                 if (ac.township) parts.push(ac.township);
                 if (ac.streetNumber?.street) {
-                  let street = ac.streetNumber.street;
-                  if (ac.streetNumber.number) street += ac.streetNumber.number;
-                  parts.push(street);
+                  let s = ac.streetNumber.street;
+                  if (ac.streetNumber.number) s += ac.streetNumber.number;
+                  parts.push(s);
                 }
-                // 最近的地标/建筑
                 let nearestPoi = '';
                 if (ac.building?.name && ac.building.name.length > 1) {
                   nearestPoi = ac.building.name;
@@ -962,16 +962,11 @@
                   nearestPoi = rg.pois[0].name;
                 }
                 if (nearestPoi) parts.push(nearestPoi);
-
-                // 保存 POI 列表用于用户选择
                 if (rg.pois && rg.pois.length > 0) {
                   nearByPois = rg.pois.map(p => ({ name: p.name, dist: p.distance, addr: p.address, type: p.type }));
                 } else if (rg.aois && rg.aois.length > 0) {
                   nearByPois = rg.aois.map(a => ({ name: a.name, dist: a.distance, addr: a.address, type: a.type }));
-                } else {
-                  nearByPois = [];
-                }
-
+                } else { nearByPois = []; }
                 return parts.filter(Boolean).join(' ') || rg.formatted_address;
               }
               return null;
@@ -1061,17 +1056,21 @@
   function updateLocationHint() {
     const hint = $('location-status-hint');
     if (!hint) return;
+    let text = '';
     if (wmState.useManualAddr) {
-      hint.textContent = '手动模式: ' + (wmState.manualAddr || '未输入地址');
+      text = '手动模式: ' + (wmState.manualAddr || '未输入地址');
     } else if (wmState.usePoi && selectedPoi) {
-      hint.textContent = '附近地点: ' + selectedPoi;
+      text = '附近地点: ' + selectedPoi;
     } else if (locationAddress) {
-      hint.textContent = '自动定位: ' + locationAddress;
+      text = locationAddress;
+      // 显示服务来源
+      if (window._geoSource) text += ' (' + window._geoSource + ')';
     } else if (locationError) {
-      hint.textContent = '自动定位失败，可开启「手动输入地址」';
+      text = '自动定位失败，可开启「手动输入地址」';
     } else {
-      hint.textContent = '正在获取位置...';
+      text = '正在获取位置...';
     }
+    hint.textContent = text;
   }
 
   function renderPoiList() {
