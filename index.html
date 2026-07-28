@@ -588,28 +588,28 @@
   <!-- 水印实时预览 -->
   <div id="watermark-overlay">
     <div class="watermark-corner wm-corner-tl" id="wm-tl">
-      <span class="wm-line" id="wm-time-top"></span>
-      <span class="wm-line" id="wm-date-top"></span>
-      <span class="wm-line" id="wm-location-top"></span>
-      <span class="wm-line" id="wm-custom-top"></span>
+      <span class="wm-line" id="wm-time-tl"></span>
+      <span class="wm-line" id="wm-date-tl"></span>
+      <span class="wm-line" id="wm-location-tl"></span>
+      <span class="wm-line" id="wm-custom-tl"></span>
     </div>
     <div class="watermark-corner wm-corner-tr" id="wm-tr">
-      <span class="wm-line" id="wm-time-top-right"></span>
-      <span class="wm-line" id="wm-date-top-right"></span>
-      <span class="wm-line" id="wm-location-top-right"></span>
-      <span class="wm-line" id="wm-custom-top-right"></span>
+      <span class="wm-line" id="wm-time-tr"></span>
+      <span class="wm-line" id="wm-date-tr"></span>
+      <span class="wm-line" id="wm-location-tr"></span>
+      <span class="wm-line" id="wm-custom-tr"></span>
     </div>
     <div class="watermark-corner wm-corner-bl" id="wm-bl">
-      <span class="wm-line" id="wm-time-bottom"></span>
-      <span class="wm-line" id="wm-date-bottom"></span>
-      <span class="wm-line" id="wm-location-bottom"></span>
-      <span class="wm-line" id="wm-custom-bottom"></span>
+      <span class="wm-line" id="wm-time-bl"></span>
+      <span class="wm-line" id="wm-date-bl"></span>
+      <span class="wm-line" id="wm-location-bl"></span>
+      <span class="wm-line" id="wm-custom-bl"></span>
     </div>
     <div class="watermark-corner wm-corner-br" id="wm-br">
-      <span class="wm-line" id="wm-time-bottom-right"></span>
-      <span class="wm-line" id="wm-date-bottom-right"></span>
-      <span class="wm-line" id="wm-location-bottom-right"></span>
-      <span class="wm-line" id="wm-custom-bottom-right"></span>
+      <span class="wm-line" id="wm-time-br"></span>
+      <span class="wm-line" id="wm-date-br"></span>
+      <span class="wm-line" id="wm-location-br"></span>
+      <span class="wm-line" id="wm-custom-br"></span>
     </div>
   </div>
 
@@ -1176,7 +1176,13 @@
     const lines = [];
     if (wmState.showTime) lines.push(formatTime());
     if (wmState.showDate) lines.push(formatDate());
-    if (wmState.showLocation) lines.push(locationAddress || (locationError ? '📍 定位失败' : '📍--'));
+    if (wmState.showLocation) {
+      let loc = '';
+      if (wmState.useManualAddr) loc = wmState.manualAddr;
+      else if (wmState.usePoi && selectedPoi) loc = selectedPoi;
+      else loc = locationAddress || (locationError ? '定位失败' : '定位中');
+      lines.push(loc);
+    }
     if (wmState.showCustom && wmState.customText) lines.push(wmState.customText);
 
     // 位置
