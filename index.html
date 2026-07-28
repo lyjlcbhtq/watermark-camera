@@ -680,7 +680,7 @@
         <button class="setting-action-btn" id="btn-refresh-location">刷新定位</button>
       </div>
       <div class="setting-row" style="border-bottom:none;flex-wrap:wrap;">
-        <span class="setting-hint" id="location-status-hint">等待定位...</span>
+        <span class="setting-hint" id="location-status-hint">获取位置中... 如果一直显示坐标数字，请开启下方"手动输入地址"</span>
       </div>
     </div>
 
@@ -862,51 +862,58 @@
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
         currentLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-        // 先显示坐标（快速）
-        locationAddress = `${currentLocation.lat.toFixed(4)},${currentLocation.lng.toFixed(4)}`;
+        // 先显示坐标（快速），更友好的格式
+        locationAddress = `📍 ${currentLocation.lat.toFixed(4)}, ${currentLocation.lng.toFixed(4)}`;
         updateWatermarkOverlay();
 
         // 尝试逆地理编码获取地址（多个服务，谁先返回用谁）
         const geoPromises = [];
 
+        // 同时尝试多个逆地理编码服务
+        function strAddress(data, fallback) {
+          if (!data) return null;
+          const ad = data.address || data;
+          const parts = [];
+          if (ad.city || ad.town || ad.county || ad.state_district) parts.push(ad.city || ad.town || ad.county || ad.state_district);
+          if (ad.district || ad.suburb || ad.borough) parts.push(ad.district || ad.suburb || ad.borough);
+          if (ad.road || ad.street || ad.village) parts.push(ad.road || ad.street || ad.village);
+          if (ad.name && !parts.includes(ad.name) && ad.name.length > 2) parts.push(ad.name);
+          return parts.length ? parts.join(' ') : fallback || null;
+        }
+
         // 服务1: Nominatim (OpenStreetMap)
         geoPromises.push(
           fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${currentLocation.lat}&lon=${currentLocation.lng}&accept-language=zh&zoom=18`,
-            { headers: { 'User-Agent': 'WatermarkCamera/1.0' } })
-            .then(r => r.ok ? r.json() : Promise.reject('Nominatim'))
-            .then(data => {
-              const ad = data.address;
-              if (ad) {
-                const parts = [ad.city || ad.town || ad.county || ad.state_district, ad.district || ad.suburb || '', ad.road || ad.street || ''].filter(Boolean);
-                return parts.length ? parts.join(' ') : (data.display_name?.split(',')[0] || null);
-              }
-              return null;
-            })
+            { headers: { 'User-Agent': 'WatermarkCamera/1.0' }, signal: AbortSignal.timeout(5000) })
+            .then(r => r.ok ? r.json() : null)
+            .then(d => strAddress(d, d?.display_name?.split(',')[0]))
             .catch(() => null)
         );
 
-        // 服务2: ip-api.com（在国内通常可访问，反向定位较准）
+        // 服务2: ip-api.com（HTTPS）
         geoPromises.push(
-          fetch(`http://ip-api.com/json/${currentLocation.lat},${currentLocation.lng}?lang=zh-CN&fields=status,regionName,city,district,zip,query`)
-            .then(r => r.ok ? r.json() : Promise.reject('ip-api'))
-            .then(data => {
-              if (data.status === 'success') {
-                const parts = [data.regionName, data.city, data.district].filter(Boolean);
-                return parts.length ? parts.join(' ') : null;
-              }
-              return null;
-            })
+          fetch(`https://ip-api.com/json/${currentLocation.lat},${currentLocation.lng}?lang=zh-CN&fields=status,regionName,city,district,zip`,
+            { signal: AbortSignal.timeout(5000) })
+            .then(r => r.ok ? r.json() : null)
+            .then(d => d?.status === 'success' ? strAddress({ city: d.city, district: d.district, state_district: d.regionName }) : null)
             .catch(() => null)
         );
 
-        // 服务3: bigdatacloud（免费备用）
+        // 服务3: bigdatacloud
         geoPromises.push(
-          fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${currentLocation.lat}&longitude=${currentLocation.lng}&localityLanguage=zh`)
-            .then(r => r.ok ? r.json() : Promise.reject('bigdata'))
-            .then(data => {
-              const parts = [data.city || data.locality, data.principalSubdivision || ''].filter(Boolean);
-              return parts.length ? parts.join(' ') : null;
-            })
+          fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${currentLocation.lat}&longitude=${currentLocation.lng}&localityLanguage=zh`,
+            { signal: AbortSignal.timeout(5000) })
+            .then(r => r.ok ? r.json() : null)
+            .then(d => d ? strAddress({ city: d.locality || d.city, district: d.principalSubdivision }) : null)
+            .catch(() => null)
+        );
+
+        // 服务4: geocode.maps.co（免费，需 key 但可空）
+        geoPromises.push(
+          fetch(`https://geocode.maps.co/reverse?lat=${currentLocation.lat}&lon=${currentLocation.lng}`,
+            { signal: AbortSignal.timeout(5000) })
+            .then(r => r.ok ? r.json() : null)
+            .then(d => d?.address ? strAddress(d.address) : null)
             .catch(() => null)
         );
 
@@ -928,16 +935,16 @@
       (err) => {
         console.warn('定位失败:', err.message);
         if (err.code === 1) {
-          locationAddress = '📍 定位被拒绝';
-          showToast('⚠️ 请在 Safari 设置中允许定位权限');
+          locationAddress = '定位被拒绝';
+          showToast('请在 Safari 设置中允许定位权限');
         } else if (err.code === 2) {
-          locationAddress = '📍 无法获取位置(GPS)';
+          locationAddress = 'GPS信号弱';
         } else if (err.code === 3) {
-          locationAddress = '📍 定位超时';
-          // 超时后重试一次
+          locationAddress = '定位超时';
           setTimeout(startLocation, 3000);
           return;
         }
+        showToast('自动定位失败，可开「手动输入地址」填写位置');
         locationError = true;
         updateWatermarkOverlay();
         updateLocationHint();
@@ -958,11 +965,11 @@
     if (wmState.useManualAddr) {
       hint.textContent = '手动模式: ' + (wmState.manualAddr || '未输入地址');
     } else if (locationAddress) {
-      hint.textContent = 'GPS: ' + locationAddress;
+      hint.textContent = '自动定位: ' + locationAddress;
     } else if (locationError) {
-      hint.textContent = '定位失败，试试手动输入地址';
+      hint.textContent = '⚠️ 自动定位失败，请开启「手动输入地址」并填写';
     } else {
-      hint.textContent = '正在获取位置...';
+      hint.textContent = '正在获取位置... 如果定位失败，请在下面「手动输入地址」中填写';
     }
   }
 
