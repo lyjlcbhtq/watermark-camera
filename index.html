@@ -75,6 +75,20 @@
       text-shadow: 0 1px 4px rgba(0,0,0,0.8), 0 0 2px rgba(0,0,0,0.5);
       letter-spacing: 0.5px;
       line-height: 1.3;
+      max-width: 90vw;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .wm-size-sm .wm-line { font-size: 13px; }
+    .wm-size-md .wm-line { font-size: 16px; }
+    .wm-size-lg .wm-line { font-size: 20px; }
+    .wm-size-xl .wm-line { font-size: 24px; }
+    /* 小屏适配 */
+    @media (max-width: 375px) {
+      .wm-size-md .wm-line { font-size: 14px; }
+      .wm-size-lg .wm-line { font-size: 17px; }
+      .wm-size-xl .wm-line { font-size: 20px; }
     }
     .wm-corner-tl { top: 60px; left: 16px; align-items: flex-start; }
     .wm-corner-tr { top: 60px; right: 16px; align-items: flex-end; }
@@ -88,12 +102,6 @@
     .wm-color-blue .wm-line { color: #5ac8fa; }
     .wm-color-green .wm-line { color: #34c759; }
     .wm-color-orange .wm-line { color: #ff9500; }
-
-    /* 水印大小 */
-    .wm-size-sm .wm-line { font-size: 13px; }
-    .wm-size-md .wm-line { font-size: 16px; }
-    .wm-size-lg .wm-line { font-size: 20px; }
-    .wm-size-xl .wm-line { font-size: 24px; }
 
     /* ==================== 顶部栏 ==================== */
     #top-bar {
@@ -946,13 +954,13 @@
                 const rg = d.regeocode;
                 const ac = rg.addressComponent;
                 const parts = [];
-                if (ac.province && ac.province !== ac.city) parts.push(ac.province);
                 if (ac.city) parts.push(ac.city.replace(/市$/, ''));
                 if (ac.district) parts.push(ac.district);
                 if (ac.township) parts.push(ac.township);
                 if (ac.streetNumber?.street) {
                   let s = ac.streetNumber.street;
                   if (ac.streetNumber.number) s += ac.streetNumber.number;
+                  if (s.length > 20) s = s.substring(0, 20);
                   parts.push(s);
                 }
                 let nearestPoi = '';
@@ -961,13 +969,14 @@
                 } else if (rg.pois && rg.pois.length > 0) {
                   nearestPoi = rg.pois[0].name;
                 }
-                if (nearestPoi) parts.push(nearestPoi);
+                if (nearestPoi && nearestPoi.length < 15) parts.push(nearestPoi);
                 if (rg.pois && rg.pois.length > 0) {
                   nearByPois = rg.pois.map(p => ({ name: p.name, dist: p.distance, addr: p.address, type: p.type }));
                 } else if (rg.aois && rg.aois.length > 0) {
                   nearByPois = rg.aois.map(a => ({ name: a.name, dist: a.distance, addr: a.address, type: a.type }));
                 } else { nearByPois = []; }
-                return parts.filter(Boolean).join(' ') || rg.formatted_address;
+                const addr = parts.filter(Boolean).join(' ');
+                return addr.length > 30 ? addr.substring(0, 28) + '..' : addr;
               }
               return null;
             })
@@ -1058,17 +1067,17 @@
     if (!hint) return;
     let text = '';
     if (wmState.useManualAddr) {
-      text = '手动模式: ' + (wmState.manualAddr || '未输入地址');
+      text = '✓ 手动: ' + (wmState.manualAddr || '未填');
     } else if (wmState.usePoi && selectedPoi) {
-      text = '附近地点: ' + selectedPoi;
+      text = '✓ ' + selectedPoi;
     } else if (locationAddress) {
       text = locationAddress;
-      // 显示服务来源
-      if (window._geoSource) text += ' (' + window._geoSource + ')';
+      if (window._geoSource) text += ' [' + window._geoSource + ']';
+      if (window._lastGpsCoord) text += ' ' + window._lastGpsCoord.replace('GPS:', '').substring(0, 25);
     } else if (locationError) {
-      text = '自动定位失败，可开启「手动输入地址」';
+      text = '定位失败，请开启「手动输入地址」';
     } else {
-      text = '正在获取位置...';
+      text = '获取GPS中...';
     }
     hint.textContent = text;
   }
