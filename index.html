@@ -845,7 +845,8 @@
     updateLocationHint();
   }
 
-  // ==================== 位置获取 ====================
+  // 高德地图 API Key（用户申请的）
+  const AMAP_KEY = 'b6045d9bbac9de8d8642a71580218562';
   // ==================== 位置获取（改进版） ====================
   function startLocation() {
     if (!navigator.geolocation) {
@@ -881,7 +882,30 @@
           return parts.length ? parts.join(' ') : fallback || null;
         }
 
-        // 服务1: Nominatim (OpenStreetMap)
+        // 服务1: 高德地图（国内最准，优先）
+        geoPromises.push(
+          fetch(`https://restapi.amap.com/v3/geocode/regeo?output=JSON&location=${currentLocation.lng},${currentLocation.lat}&key=${AMAP_KEY}&radius=1000&extensions=all`,
+            { signal: AbortSignal.timeout(5000) })
+            .then(r => r.ok ? r.json() : null)
+            .then(d => {
+              if (d?.status === '1' && d.regeocode) {
+                const ac = d.regeocode.addressComponent;
+                if (ac) {
+                  const parts = [];
+                  if (ac.city) parts.push(ac.city.replace(/^市$/, '').replace(/市$/, ''));
+                  if (ac.district) parts.push(ac.district);
+                  if (ac.township) parts.push(ac.township);
+                  if (ac.streetNumber?.street) parts.push(ac.streetNumber.street + (ac.streetNumber.number || ''));
+                  return parts.filter(Boolean).length ? parts.join(' ') : d.regeocode.formatted_address;
+                }
+                return d.regeocode.formatted_address;
+              }
+              return null;
+            })
+            .catch(() => null)
+        );
+
+        // 服务2: Nominatim (OpenStreetMap)
         geoPromises.push(
           fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${currentLocation.lat}&lon=${currentLocation.lng}&accept-language=zh&zoom=18`,
             { headers: { 'User-Agent': 'WatermarkCamera/1.0' }, signal: AbortSignal.timeout(5000) })
@@ -890,7 +914,7 @@
             .catch(() => null)
         );
 
-        // 服务2: ip-api.com（HTTPS）
+        // 服务3: ip-api.com（HTTPS）
         geoPromises.push(
           fetch(`https://ip-api.com/json/${currentLocation.lat},${currentLocation.lng}?lang=zh-CN&fields=status,regionName,city,district,zip`,
             { signal: AbortSignal.timeout(5000) })
@@ -899,7 +923,7 @@
             .catch(() => null)
         );
 
-        // 服务3: bigdatacloud
+        // 服务4: bigdatacloud
         geoPromises.push(
           fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${currentLocation.lat}&longitude=${currentLocation.lng}&localityLanguage=zh`,
             { signal: AbortSignal.timeout(5000) })
@@ -908,7 +932,7 @@
             .catch(() => null)
         );
 
-        // 服务4: geocode.maps.co（免费，需 key 但可空）
+        // 服务5: geocode.maps.co
         geoPromises.push(
           fetch(`https://geocode.maps.co/reverse?lat=${currentLocation.lat}&lon=${currentLocation.lng}`,
             { signal: AbortSignal.timeout(5000) })
