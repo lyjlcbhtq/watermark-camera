@@ -1,0 +1,1356 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="水印相机">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='100' fill='%231a1a2e'/%3E%3Ctext x='256' y='320' text-anchor='middle' font-size='200'%3E📷%3C/text%3E%3C/svg%3E">
+  <title>简单水印相机</title>
+
+  <style>
+    /* ==================== Reset & Base ==================== */
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 100%; height: 100%;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", "Helvetica Neue", sans-serif;
+      background: #000;
+      color: #fff;
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+    button { font-family: inherit; border: none; outline: none; cursor: pointer; touch-action: manipulation; }
+    input { font-family: inherit; outline: none; border: none; }
+
+    /* ==================== App Container ==================== */
+    #app {
+      position: relative;
+      width: 100%; height: 100%;
+      overflow: hidden;
+      background: #000;
+    }
+
+    /* ==================== Camera Preview ==================== */
+    #camera-container {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      overflow: hidden;
+      background: #111;
+    }
+    #camera-container video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    /* ==================== Watermark Overlay (实时预览) ==================== */
+    #watermark-overlay {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+      padding: 20px 16px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    /* 水印区域 - 四角定位容器 */
+    .watermark-corner {
+      position: absolute;
+      pointer-events: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .watermark-corner .wm-line {
+      font-size: 16px;
+      font-weight: 600;
+      text-shadow: 0 1px 4px rgba(0,0,0,0.8), 0 0 2px rgba(0,0,0,0.5);
+      letter-spacing: 0.5px;
+      line-height: 1.3;
+    }
+    .wm-corner-tl { top: 60px; left: 16px; align-items: flex-start; }
+    .wm-corner-tr { top: 60px; right: 16px; align-items: flex-end; }
+    .wm-corner-bl { bottom: 130px; left: 16px; align-items: flex-start; }
+    .wm-corner-br { bottom: 130px; right: 16px; align-items: flex-end; }
+
+    /* 水印颜色类 */
+    .wm-color-white .wm-line { color: #fff; }
+    .wm-color-yellow .wm-line { color: #ffd700; }
+    .wm-color-red .wm-line { color: #ff3b30; }
+    .wm-color-blue .wm-line { color: #5ac8fa; }
+    .wm-color-green .wm-line { color: #34c759; }
+    .wm-color-orange .wm-line { color: #ff9500; }
+
+    /* 水印大小 */
+    .wm-size-sm .wm-line { font-size: 13px; }
+    .wm-size-md .wm-line { font-size: 16px; }
+    .wm-size-lg .wm-line { font-size: 20px; }
+    .wm-size-xl .wm-line { font-size: 24px; }
+
+    /* ==================== 顶部栏 ==================== */
+    #top-bar {
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      padding: 54px 16px 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: linear-gradient(to bottom, rgba(0,0,0,0.6) 0%, transparent 100%);
+      z-index: 10;
+    }
+    #top-bar .title {
+      font-size: 18px;
+      font-weight: 700;
+      text-shadow: 0 1px 4px rgba(0,0,0,0.5);
+    }
+    .top-btn {
+      width: 40px; height: 40px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.15);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      color: #fff;
+      font-size: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s;
+    }
+    .top-btn:active { background: rgba(255,255,255,0.3); }
+
+    /* ==================== 模式切换 ==================== */
+    #mode-bar {
+      position: absolute;
+      top: 104px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 10;
+      display: flex;
+      background: rgba(0,0,0,0.5);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-radius: 22px;
+      padding: 3px;
+      gap: 2px;
+    }
+    .mode-btn {
+      padding: 8px 22px;
+      border-radius: 19px;
+      font-size: 14px;
+      font-weight: 600;
+      color: rgba(255,255,255,0.7);
+      background: transparent;
+      transition: all 0.3s ease;
+    }
+    .mode-btn.active {
+      background: #007aff;
+      color: #fff;
+      box-shadow: 0 2px 10px rgba(0,122,255,0.4);
+    }
+
+    /* ==================== 底部控制区 ==================== */
+    #bottom-bar {
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      padding: 16px 24px 40px;
+      background: linear-gradient(to top, rgba(0,0,0,0.7) 0%, transparent 100%);
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .bottom-btn {
+      width: 44px; height: 44px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.12);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      color: #fff;
+      font-size: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+    }
+    .bottom-btn:active { background: rgba(255,255,255,0.25); transform: scale(0.92); }
+
+    /* 快门按钮 */
+    #shutter-btn {
+      width: 76px; height: 76px;
+      border-radius: 50%;
+      background: transparent;
+      border: 4px solid rgba(255,255,255,0.9);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+      position: relative;
+    }
+    #shutter-btn .inner {
+      width: 60px; height: 60px;
+      border-radius: 50%;
+      background: #fff;
+      transition: all 0.3s;
+    }
+    #shutter-btn:active .inner { transform: scale(0.85); }
+    /* 录像中状态 */
+    #shutter-btn.recording { border-color: #ff3b30; }
+    #shutter-btn.recording .inner {
+      width: 28px; height: 28px;
+      border-radius: 6px;
+      background: #ff3b30;
+    }
+    #shutter-btn.recording { animation: pulse-record 1.5s ease-in-out infinite; }
+    @keyframes pulse-record {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(255,59,48,0.4); }
+      50% { box-shadow: 0 0 0 12px rgba(255,59,48,0); }
+    }
+
+    /* 录像计时器 */
+    #recording-timer {
+      display: none;
+      position: absolute;
+      top: 156px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 10;
+      background: rgba(0,0,0,0.5);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      padding: 4px 14px;
+      border-radius: 14px;
+      font-size: 14px;
+      font-weight: 600;
+      color: #ff3b30;
+      align-items: center;
+      gap: 6px;
+    }
+    #recording-timer.show { display: flex; }
+    #recording-timer .dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #ff3b30;
+      animation: blink 1s step-end infinite;
+    }
+    @keyframes blink { 50% { opacity: 0; } }
+
+    /* ==================== 面板 (设置/相册) ==================== */
+    .panel-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 50;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+    }
+    .panel-overlay.show {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .panel {
+      position: fixed;
+      left: 0; right: 0;
+      bottom: 0;
+      z-index: 51;
+      background: #1c1c1e;
+      border-radius: 20px 20px 0 0;
+      padding: 20px 20px 40px;
+      max-height: 80vh;
+      overflow-y: auto;
+      transform: translateY(100%);
+      transition: transform 0.35s cubic-bezier(0.32,0.72,0,1);
+    }
+    .panel.show {
+      transform: translateY(0);
+    }
+    .panel-handle {
+      width: 36px; height: 4px;
+      border-radius: 2px;
+      background: rgba(255,255,255,0.2);
+      margin: 0 auto 16px;
+    }
+    .panel-title {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 20px;
+      text-align: center;
+    }
+
+    /* 设置项 */
+    .setting-group {
+      margin-bottom: 20px;
+    }
+    .setting-group-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: rgba(255,255,255,0.5);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 10px;
+    }
+    .setting-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+    .setting-row:last-child { border-bottom: none; }
+    .setting-label {
+      font-size: 15px;
+      font-weight: 500;
+    }
+    .setting-label .hint {
+      font-size: 12px;
+      color: rgba(255,255,255,0.4);
+      font-weight: 400;
+      display: block;
+      margin-top: 2px;
+    }
+
+    /* 开关 */
+    .toggle {
+      width: 50px; height: 30px;
+      border-radius: 15px;
+      background: rgba(255,255,255,0.15);
+      position: relative;
+      transition: background 0.3s;
+      flex-shrink: 0;
+      cursor: pointer;
+    }
+    .toggle.on { background: #34c759; }
+    .toggle .knob {
+      width: 26px; height: 26px;
+      border-radius: 50%;
+      background: #fff;
+      position: absolute;
+      top: 2px; left: 2px;
+      transition: transform 0.3s cubic-bezier(0.32,0.72,0,1);
+      box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+    }
+    .toggle.on .knob { transform: translateX(20px); }
+
+    /* 选择器 */
+    .option-group {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .option-btn {
+      padding: 6px 14px;
+      border-radius: 16px;
+      font-size: 13px;
+      font-weight: 500;
+      background: rgba(255,255,255,0.08);
+      color: rgba(255,255,255,0.7);
+      transition: all 0.2s;
+    }
+    .option-btn.active {
+      background: #007aff;
+      color: #fff;
+    }
+    .option-btn:active { transform: scale(0.94); }
+
+    /* 颜色选择 */
+    .color-options {
+      display: flex;
+      gap: 12px;
+    }
+    .color-dot {
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      border: 2px solid transparent;
+      transition: all 0.2s;
+      cursor: pointer;
+    }
+    .color-dot.active { border-color: #fff; transform: scale(1.15); }
+
+    /* 自定义文本输入 */
+    #custom-text-input {
+      width: 100%;
+      background: rgba(255,255,255,0.08);
+      border-radius: 12px;
+      padding: 10px 14px;
+      font-size: 15px;
+      color: #fff;
+    }
+    #custom-text-input::placeholder { color: rgba(255,255,255,0.3); }
+
+    /* ==================== 相册面板 ==================== */
+    #gallery-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 3px;
+    }
+    .gallery-item {
+      position: relative;
+      aspect-ratio: 1;
+      border-radius: 4px;
+      overflow: hidden;
+      background: #2a2a2a;
+    }
+    .gallery-item img, .gallery-item video {
+      width: 100%; height: 100%;
+      object-fit: cover;
+    }
+    .gallery-item .media-type-badge {
+      position: absolute;
+      top: 6px; right: 6px;
+      background: rgba(0,0,0,0.6);
+      backdrop-filter: blur(4px);
+      border-radius: 8px;
+      padding: 2px 6px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .gallery-empty {
+      grid-column: 1 / -1;
+      text-align: center;
+      padding: 40px 20px;
+      color: rgba(255,255,255,0.3);
+      font-size: 15px;
+    }
+    .gallery-empty .big-icon { font-size: 48px; margin-bottom: 12px; }
+
+    /* ==================== 预览模态框 ==================== */
+    #preview-modal {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      z-index: 60;
+      background: #000;
+      display: none;
+      flex-direction: column;
+    }
+    #preview-modal.show { display: flex; }
+    #preview-modal .preview-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 54px 16px 12px;
+      z-index: 1;
+    }
+    #preview-modal .preview-close {
+      width: 40px; height: 40px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.15);
+      color: #fff;
+      font-size: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #preview-modal .preview-media {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      padding: 8px;
+    }
+    #preview-modal .preview-media img,
+    #preview-modal .preview-media video {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      border-radius: 8px;
+    }
+    #preview-modal .preview-actions {
+      display: flex;
+      gap: 16px;
+      justify-content: center;
+      padding: 20px 24px 48px;
+    }
+    .action-btn {
+      padding: 12px 28px;
+      border-radius: 24px;
+      font-size: 16px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .action-btn.primary { background: #007aff; color: #fff; }
+    .action-btn.secondary { background: rgba(255,255,255,0.1); color: #fff; }
+
+    /* ==================== 状态提示 ==================== */
+    #toast {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) scale(0.95);
+      z-index: 100;
+      background: rgba(0,0,0,0.8);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      padding: 16px 28px;
+      border-radius: 14px;
+      font-size: 15px;
+      font-weight: 500;
+      text-align: center;
+      opacity: 0;
+      pointer-events: none;
+      transition: all 0.3s ease;
+      max-width: 80%;
+    }
+    #toast.show {
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(1);
+    }
+
+    /* ==================== 滚动条 ==================== */
+    .panel::-webkit-scrollbar { width: 4px; }
+    .panel::-webkit-scrollbar-track { background: transparent; }
+    .panel::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 2px; }
+
+    /* ==================== 适配 ==================== */
+    @media (prefers-color-scheme: light) {
+      /* 保持深色主题，相机 App 就该是黑的 */
+    }
+    @supports (padding-top: env(safe-area-inset-top)) {
+      #top-bar { padding-top: calc(env(safe-area-inset-top) + 12px); }
+      #bottom-bar { padding-bottom: calc(env(safe-area-inset-bottom) + 16px); }
+      .panel { padding-bottom: calc(env(safe-area-inset-bottom) + 20px); }
+      #preview-modal .preview-header { padding-top: calc(env(safe-area-inset-top) + 12px); }
+      #preview-modal .preview-actions { padding-bottom: calc(env(safe-area-inset-bottom) + 24px); }
+    }
+
+    /* 相机启动遮挡 */
+    #loading-overlay {
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: #000;
+      z-index: 5;
+      transition: opacity 0.5s ease;
+    }
+    #loading-overlay.hidden { opacity: 0; pointer-events: none; }
+    #loading-overlay .spinner {
+      width: 40px; height: 40px;
+      border: 3px solid rgba(255,255,255,0.1);
+      border-top-color: #007aff;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #loading-overlay .loading-text {
+      margin-top: 16px;
+      font-size: 14px;
+      color: rgba(255,255,255,0.6);
+    }
+  </style>
+</head>
+<body>
+
+<div id="app">
+  <!-- 加载中 -->
+  <div id="loading-overlay">
+    <div class="spinner"></div>
+    <div class="loading-text">正在启动相机...</div>
+  </div>
+
+  <!-- 相机预览 -->
+  <div id="camera-container">
+    <video id="camera-preview" autoplay playsinline muted></video>
+  </div>
+
+  <!-- 水印实时预览 -->
+  <div id="watermark-overlay">
+    <div class="watermark-corner wm-corner-tl" id="wm-tl">
+      <span class="wm-line" id="wm-time-top"></span>
+      <span class="wm-line" id="wm-date-top"></span>
+      <span class="wm-line" id="wm-location-top"></span>
+      <span class="wm-line" id="wm-custom-top"></span>
+    </div>
+    <div class="watermark-corner wm-corner-tr" id="wm-tr">
+      <span class="wm-line" id="wm-time-top-right"></span>
+      <span class="wm-line" id="wm-date-top-right"></span>
+      <span class="wm-line" id="wm-location-top-right"></span>
+      <span class="wm-line" id="wm-custom-top-right"></span>
+    </div>
+    <div class="watermark-corner wm-corner-bl" id="wm-bl">
+      <span class="wm-line" id="wm-time-bottom"></span>
+      <span class="wm-line" id="wm-date-bottom"></span>
+      <span class="wm-line" id="wm-location-bottom"></span>
+      <span class="wm-line" id="wm-custom-bottom"></span>
+    </div>
+    <div class="watermark-corner wm-corner-br" id="wm-br">
+      <span class="wm-line" id="wm-time-bottom-right"></span>
+      <span class="wm-line" id="wm-date-bottom-right"></span>
+      <span class="wm-line" id="wm-location-bottom-right"></span>
+      <span class="wm-line" id="wm-custom-bottom-right"></span>
+    </div>
+  </div>
+
+  <!-- 顶部栏 -->
+  <div id="top-bar">
+    <button class="top-btn" id="btn-settings" aria-label="设置">⚙️</button>
+    <span class="title">简单水印相机</span>
+    <button class="top-btn" id="btn-switch-camera" aria-label="切换摄像头">🔄</button>
+  </div>
+
+  <!-- 模式切换 -->
+  <div id="mode-bar">
+    <button class="mode-btn active" data-mode="photo">📷 拍照</button>
+    <button class="mode-btn" data-mode="video">🎬 录像</button>
+  </div>
+
+  <!-- 录像计时器 -->
+  <div id="recording-timer">
+    <span class="dot"></span>
+    <span id="timer-display">00:00</span>
+  </div>
+
+  <!-- 底部控制 -->
+  <div id="bottom-bar">
+    <button class="bottom-btn" id="btn-gallery" aria-label="相册">🖼️</button>
+    <button id="shutter-btn">
+      <div class="inner"></div>
+    </button>
+    <button class="bottom-btn" id="btn-watermark-settings" aria-label="水印">🏷️</button>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast"></div>
+
+  <!-- ==================== 水印设置面板 ==================== -->
+  <div class="panel-overlay" id="watermark-panel-overlay"></div>
+  <div class="panel" id="watermark-panel">
+    <div class="panel-handle"></div>
+    <div class="panel-title">🏷️ 水印设置</div>
+
+    <div class="setting-group">
+      <div class="setting-group-title">显示内容</div>
+      <div class="setting-row">
+        <span class="setting-label">显示时间</span>
+        <div class="toggle on" id="toggle-time"><div class="knob"></div></div>
+      </div>
+      <div class="setting-row">
+        <span class="setting-label">显示日期</span>
+        <div class="toggle on" id="toggle-date"><div class="knob"></div></div>
+      </div>
+      <div class="setting-row">
+        <span class="setting-label">显示地点</span>
+        <div class="toggle on" id="toggle-location"><div class="knob"></div></div>
+      </div>
+      <div class="setting-row">
+        <span class="setting-label">自定义文字</span>
+        <div class="toggle" id="toggle-custom"><div class="knob"></div></div>
+      </div>
+      <div class="setting-row">
+        <div style="flex:1">
+          <span class="setting-label">自定义内容</span>
+        </div>
+        <input id="custom-text-input" type="text" placeholder="输入自定义文字..." maxlength="40" style="width:auto;flex:1;margin-left:12px;">
+      </div>
+    </div>
+
+    <div class="setting-group">
+      <div class="setting-group-title">水印位置</div>
+      <div class="option-group" id="position-options">
+        <button class="option-btn active" data-pos="tl">左上</button>
+        <button class="option-btn" data-pos="tr">右上</button>
+        <button class="option-btn" data-pos="bl">左下</button>
+        <button class="option-btn" data-pos="br">右下</button>
+      </div>
+    </div>
+
+    <div class="setting-group">
+      <div class="setting-group-title">文字颜色</div>
+      <div class="color-options" id="color-options">
+        <div class="color-dot active" data-color="white" style="background:#fff;box-shadow:0 0 0 1px rgba(255,255,255,0.2)"></div>
+        <div class="color-dot" data-color="yellow" style="background:#ffd700"></div>
+        <div class="color-dot" data-color="red" style="background:#ff3b30"></div>
+        <div class="color-dot" data-color="blue" style="background:#5ac8fa"></div>
+        <div class="color-dot" data-color="green" style="background:#34c759"></div>
+        <div class="color-dot" data-color="orange" style="background:#ff9500"></div>
+      </div>
+    </div>
+
+    <div class="setting-group">
+      <div class="setting-group-title">字体大小</div>
+      <div class="option-group" id="size-options">
+        <button class="option-btn" data-size="sm">小</button>
+        <button class="option-btn active" data-size="md">中</button>
+        <button class="option-btn" data-size="lg">大</button>
+        <button class="option-btn" data-size="xl">超大</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== 相册面板 ==================== -->
+  <div class="panel-overlay" id="gallery-panel-overlay"></div>
+  <div class="panel" id="gallery-panel">
+    <div class="panel-handle"></div>
+    <div class="panel-title">🖼️ 我的相册</div>
+    <div id="gallery-grid">
+      <div class="gallery-empty">
+        <div class="big-icon">📸</div>
+        <div>还没有拍摄内容<br>去拍一张吧！</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== 预览模态框 ==================== -->
+  <div id="preview-modal">
+    <div class="preview-header">
+      <button class="preview-close" id="preview-close">✕</button>
+      <span style="font-weight:600;font-size:16px;">预览</span>
+      <div style="width:40px"></div>
+    </div>
+    <div class="preview-media" id="preview-media-container"></div>
+    <div class="preview-actions" id="preview-actions"></div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+//  简单水印相机 - 完整 JavaScript
+// ============================================================
+
+(() => {
+  'use strict';
+
+  // ==================== DOM 引用 ====================
+  const $ = id => document.getElementById(id);
+  const video       = $('camera-preview');
+  const shutterBtn  = $('shutter-btn');
+  const modeBtns    = document.querySelectorAll('.mode-btn');
+  const toast       = $('toast');
+  const timerEl     = $('recording-timer');
+  const timerDisplay= $('timer-display');
+
+  // ==================== 状态 ====================
+  let currentMode = 'photo'; // 'photo' | 'video'
+  let isRecording = false;
+  let useFrontCamera = false;
+  let stream = null;
+  let mediaRecorder = null;
+  let recordedChunks = [];
+  let recordingCanvas = null;
+  let recordingCtx = null;
+  let animFrameId = null;
+  let canvasStream = null;
+  let timerInterval = null;
+  let seconds = 0;
+  let currentLocation = null;
+  let locationAddress = '';
+  let locationError = false;
+
+  // 水印状态
+  const wmState = {
+    showTime: true,
+    showDate: true,
+    showLocation: true,
+    showCustom: false,
+    customText: '',
+    position: 'tl',  // tl, tr, bl, br
+    color: 'white',
+    size: 'md',
+  };
+
+  // 相册
+  let galleryItems = [];
+
+  // ==================== 水印渲染函数 ====================
+  function formatTime() {
+    const now = new Date();
+    const h = String(now.getHours()).padStart(2,'0');
+    const m = String(now.getMinutes()).padStart(2,'0');
+    const s = String(now.getSeconds()).padStart(2,'0');
+    return `${h}:${m}:${s}`;
+  }
+  function formatDate() {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth()+1).padStart(2,'0');
+    const d = String(now.getDate()).padStart(2,'0');
+    const weekdays = ['日','一','二','三','四','五','六'];
+    return `${y}-${m}-${d} 周${weekdays[now.getDay()]}`;
+  }
+
+  function updateWatermarkOverlay() {
+    // 决定显示哪个角落
+    const corners = ['tl','tr','bl','br'];
+    corners.forEach(pos => {
+      const el = $(`wm-${pos}`);
+      el.style.display = pos === wmState.position ? 'flex' : 'none';
+    });
+
+    // 设置内容
+    const p = wmState.position;
+    const setEl = (id, val) => {
+      const el = $(`${id}-${p}`);
+      if (el) {
+        el.textContent = val;
+        el.style.display = val ? 'block' : 'none';
+      }
+    };
+
+    setEl('wm-time', wmState.showTime ? formatTime() : '');
+    setEl('wm-date', wmState.showDate ? formatDate() : '');
+    setEl('wm-location', wmState.showLocation ? (locationAddress || (locationError ? '📍 定位失败' : '📍 定位中...')) : '');
+    setEl('wm-custom', wmState.showCustom && wmState.customText ? wmState.customText : '');
+
+    // 颜色 / 大小
+    const overlay = $('watermark-overlay');
+    ['white','yellow','red','blue','green','orange'].forEach(c => overlay.classList.remove(`wm-color-${c}`));
+    overlay.classList.add(`wm-color-${wmState.color}`);
+
+    ['sm','md','lg','xl'].forEach(s => overlay.classList.remove(`wm-size-${s}`));
+    overlay.classList.add(`wm-size-${wmState.size}`);
+  }
+
+  // ==================== 位置获取 ====================
+  function startLocation() {
+    if (!navigator.geolocation) {
+      locationError = true;
+      updateWatermarkOverlay();
+      return;
+    }
+    // 先显示默认占位
+    locationAddress = '';
+    locationError = false;
+    updateWatermarkOverlay();
+
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        currentLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        // 逆地理编码
+        try {
+          const resp = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${currentLocation.lat}&lon=${currentLocation.lng}&accept-language=zh`,
+            { headers: { 'User-Agent': 'SimpleWatermarkCamera/1.0' } }
+          );
+          if (!resp.ok) throw new Error('HTTP ' + resp.status);
+          const data = await resp.json();
+          locationAddress = data.display_name || `${currentLocation.lat.toFixed(4)},${currentLocation.lng.toFixed(4)}`;
+          // 简化为：城市 + 区 + 街道
+          const ad = data.address;
+          if (ad) {
+            const parts = [ad.city || ad.town || ad.county, ad.district || '', ad.road || ''].filter(Boolean);
+            if (parts.length) locationAddress = parts.join(' ');
+            else locationAddress = data.display_name?.split(',')[0] || `${currentLocation.lat.toFixed(4)},${currentLocation.lng.toFixed(4)}`;
+          }
+        } catch (e) {
+          locationAddress = `${currentLocation.lat.toFixed(4)},${currentLocation.lng.toFixed(4)}`;
+        }
+        locationError = false;
+        updateWatermarkOverlay();
+      },
+      (err) => {
+        console.warn('定位失败:', err.message);
+        locationError = true;
+        locationAddress = '';
+        updateWatermarkOverlay();
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+    );
+  }
+
+  // ==================== 相机初始化 ====================
+  async function startCamera() {
+    const constraints = {
+      video: {
+        facingMode: useFrontCamera ? 'user' : 'environment',
+        width: { ideal: 1920 },
+        height: { ideal: 1080 },
+      },
+      audio: true,
+    };
+
+    // Stop previous stream
+    if (stream) {
+      stream.getTracks().forEach(t => t.stop());
+      stream = null;
+    }
+
+    try {
+      stream = await navigator.mediaDevices.getUserMedia(constraints);
+      video.srcObject = stream;
+      await video.play();
+      $('loading-overlay').classList.add('hidden');
+    } catch (err) {
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        showToast('⚠️ 请在设置中允许使用相机和麦克风');
+      } else {
+        showToast('⚠️ 相机启动失败: ' + err.message);
+      }
+      $('loading-overlay').classList.add('hidden');
+    }
+  }
+
+  async function switchCamera() {
+    useFrontCamera = !useFrontCamera;
+    await startCamera();
+  }
+
+  // ==================== 水印绘制 (Canvas) ====================
+  function drawWatermarkOnCanvas(ctx, width, height) {
+    const fontSize = wmState.size === 'sm' ? Math.round(height * 0.025)
+      : wmState.size === 'md' ? Math.round(height * 0.035)
+      : wmState.size === 'lg' ? Math.round(height * 0.045)
+      : Math.round(height * 0.055);
+    const lineHeight = fontSize * 1.35;
+    const padding = fontSize * 0.5;
+
+    const colorMap = { white: '#ffffff', yellow: '#ffd700', red: '#ff3b30', blue: '#5ac8fa', green: '#34c759', orange: '#ff9500' };
+    ctx.fillStyle = colorMap[wmState.color] || '#ffffff';
+    ctx.font = `600 ${fontSize}px -apple-system, "PingFang SC", "Helvetica Neue", sans-serif`;
+    ctx.textBaseline = 'top';
+    ctx.shadowColor = 'rgba(0,0,0,0.8)';
+    ctx.shadowBlur = fontSize * 0.5;
+    ctx.shadowOffsetX = 1;
+    ctx.shadowOffsetY = 1;
+
+    const lines = [];
+    if (wmState.showTime) lines.push(formatTime());
+    if (wmState.showDate) lines.push(formatDate());
+    if (wmState.showLocation) lines.push(locationAddress || (locationError ? '📍 定位失败' : '📍--'));
+    if (wmState.showCustom && wmState.customText) lines.push(wmState.customText);
+
+    // 位置
+    let startX, startY;
+    switch (wmState.position) {
+      case 'tl': startX = padding; startY = padding; break;
+      case 'tr': startX = width - padding; ctx.textAlign = 'right'; startY = padding; break;
+      case 'bl': startX = padding; startY = height - padding - lines.length * lineHeight; break;
+      case 'br': startX = width - padding; ctx.textAlign = 'right'; startY = height - padding - lines.length * lineHeight; break;
+      default: startX = padding; startY = padding;
+    }
+
+    lines.forEach((line, i) => {
+      ctx.fillText(line, startX, startY + i * lineHeight);
+    });
+
+    ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
+    ctx.textAlign = 'start';
+  }
+
+  // ==================== 拍照 ====================
+  function capturePhoto() {
+    if (!stream) { showToast('⚠️ 相机未就绪'); return; }
+
+    const vw = video.videoWidth || 1280;
+    const vh = video.videoHeight || 720;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = vw;
+    canvas.height = vh;
+    const ctx = canvas.getContext('2d');
+
+    // 绘制视频帧
+    ctx.drawImage(video, 0, 0, vw, vh);
+    // 绘制水印
+    drawWatermarkOnCanvas(ctx, vw, vh);
+
+    // 保存
+    canvas.toBlob((blob) => {
+      if (!blob) { showToast('⚠️ 拍照失败'); return; }
+      const url = URL.createObjectURL(blob);
+      const item = { type: 'photo', blob, url, timestamp: Date.now() };
+      galleryItems.unshift(item);
+      saveGallery();
+      showPreview(item);
+      showToast('✅ 拍照成功');
+    }, 'image/jpeg', 0.92);
+  }
+
+  // ==================== 录像 ====================
+  function startRecording() {
+    if (!stream) { showToast('⚠️ 相机未就绪'); return; }
+
+    const vw = video.videoWidth || 1280;
+    const vh = video.videoHeight || 720;
+
+    // Create recording canvas
+    recordingCanvas = document.createElement('canvas');
+    recordingCanvas.width = vw;
+    recordingCanvas.height = vh;
+    recordingCtx = recordingCanvas.getContext('2d');
+
+    // Get canvas stream
+    canvasStream = recordingCanvas.captureStream(30);
+
+    // 合并音频
+    const audioTracks = stream.getAudioTracks();
+    let combinedStream;
+    if (audioTracks.length > 0) {
+      combinedStream = new MediaStream([
+        ...canvasStream.getVideoTracks(),
+        ...audioTracks.map(t => t.clone())
+      ]);
+    } else {
+      combinedStream = canvasStream;
+    }
+
+    // 确定编码格式
+    let mimeType = '';
+    const types = [
+      'video/mp4;codecs=h264,aac',
+      'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
+      'video/mp4',
+      'video/webm;codecs=vp8,opus',
+      'video/webm',
+    ];
+    for (const t of types) {
+      if (MediaRecorder.isTypeSupported(t)) { mimeType = t; break; }
+    }
+
+    try {
+      mediaRecorder = new MediaRecorder(combinedStream, mimeType ? { mimeType } : {});
+    } catch (e) {
+      showToast('⚠️ 不支持录像功能');
+      return;
+    }
+
+    recordedChunks = [];
+    mediaRecorder.ondataavailable = (e) => {
+      if (e.data && e.data.size > 0) recordedChunks.push(e.data);
+    };
+
+    mediaRecorder.onstop = () => {
+      if (recordedChunks.length === 0) { showToast('⚠️ 录制失败'); return; }
+      const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || 'video/mp4' });
+      const url = URL.createObjectURL(blob);
+      const item = { type: 'video', blob, url, timestamp: Date.now() };
+      galleryItems.unshift(item);
+      saveGallery();
+      showPreview(item);
+      showToast('✅ 录制完成');
+
+      // 清理
+      if (animFrameId) { cancelAnimationFrame(animFrameId); animFrameId = null; }
+      if (recordingCanvas) { recordingCanvas = null; recordingCtx = null; }
+      if (canvasStream) { canvasStream.getTracks().forEach(t => t.stop()); canvasStream = null; }
+    };
+
+    mediaRecorder.onerror = () => {
+      showToast('⚠️ 录制出错');
+      stopRecording();
+    };
+
+    // Start recording
+    mediaRecorder.start(1000);
+
+    // Start drawing watermark frames
+    isRecording = true;
+
+    function drawFrame() {
+      if (!recordingCtx || !recordingCanvas) return;
+      recordingCtx.drawImage(video, 0, 0, recordingCanvas.width, recordingCanvas.height);
+      drawWatermarkOnCanvas(recordingCtx, recordingCanvas.width, recordingCanvas.height);
+      animFrameId = requestAnimationFrame(drawFrame);
+    }
+    drawFrame();
+
+    // 计时器
+    seconds = 0;
+    timerDisplay.textContent = '00:00';
+    timerEl.classList.add('show');
+    timerInterval = setInterval(() => {
+      seconds++;
+      const m = String(Math.floor(seconds / 60)).padStart(2, '0');
+      const s = String(seconds % 60).padStart(2, '0');
+      timerDisplay.textContent = `${m}:${s}`;
+    }, 1000);
+
+    shutterBtn.classList.add('recording');
+  }
+
+  function stopRecording() {
+    if (!isRecording) return;
+    isRecording = false;
+
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      try { mediaRecorder.stop(); } catch(e) {}
+    }
+
+    if (animFrameId) { cancelAnimationFrame(animFrameId); animFrameId = null; }
+
+    // 停止计时器
+    clearInterval(timerInterval);
+    timerEl.classList.remove('show');
+
+    shutterBtn.classList.remove('recording');
+  }
+
+  // ==================== 预览 ====================
+  function showPreview(item) {
+    const modal = $('preview-modal');
+    const container = $('preview-media-container');
+    const actions = $('preview-actions');
+
+    container.innerHTML = '';
+    actions.innerHTML = '';
+
+    if (item.type === 'photo') {
+      const img = document.createElement('img');
+      img.src = item.url;
+      container.appendChild(img);
+    } else {
+      const vid = document.createElement('video');
+      vid.src = item.url;
+      vid.controls = true;
+      vid.autoplay = false;
+      vid.playsInline = true;
+      container.appendChild(vid);
+    }
+
+    // 保存按钮
+    const saveBtn = document.createElement('button');
+    saveBtn.className = 'action-btn primary';
+    saveBtn.innerHTML = '💾 保存到相册';
+    saveBtn.onclick = () => saveToGallery(item);
+    actions.appendChild(saveBtn);
+
+    // 分享按钮
+    const shareBtn = document.createElement('button');
+    shareBtn.className = 'action-btn secondary';
+    shareBtn.innerHTML = '📤 分享';
+    shareBtn.onclick = () => shareMedia(item);
+    actions.appendChild(shareBtn);
+
+    modal.classList.add('show');
+  }
+
+  function saveToGallery(item) {
+    // 在 PWA 中，我们通过下载保存
+    const a = document.createElement('a');
+    a.href = item.url;
+    const ext = item.type === 'photo' ? '.jpg' : '.mp4';
+    a.download = `水印_${new Date().toISOString().slice(0,19).replace(/[:-]/g,'')}${ext}`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    showToast('✅ 已保存到下载');
+  }
+
+  async function shareMedia(item) {
+    if (!navigator.share) {
+      saveToGallery(item);
+      return;
+    }
+    try {
+      const file = item.type === 'photo'
+        ? new File([item.blob], `watermark_${Date.now()}.jpg`, { type: 'image/jpeg' })
+        : new File([item.blob], `watermark_${Date.now()}.mp4`, { type: item.blob.type || 'video/mp4' });
+      await navigator.share({ files: [file], title: '简单水印相机' });
+    } catch (e) {
+      if (e.name !== 'AbortError') saveToGallery(item);
+    }
+  }
+
+  // ==================== 相册管理 ====================
+  function saveGallery() {
+    try {
+      // 只存元数据（blob 太大）— 我们用 IndexedDB 存 blob 引用
+      // 简化：只存当前 session 的 blob URL
+      updateGalleryGrid();
+    } catch(e) { /* ignore */ }
+  }
+
+  function updateGalleryGrid() {
+    const grid = $('gallery-grid');
+    if (galleryItems.length === 0) {
+      grid.innerHTML = `<div class="gallery-empty"><div class="big-icon">📸</div><div>还没有拍摄内容<br>去拍一张吧！</div></div>`;
+      return;
+    }
+
+    grid.innerHTML = galleryItems.map((item, i) => {
+      return `<div class="gallery-item" data-index="${i}">
+        ${item.type === 'photo'
+          ? `<img src="${item.url}" alt="photo">`
+          : `<video src="${item.url}" muted></video>`
+        }
+        <span class="media-type-badge">${item.type === 'photo' ? '📷' : '🎬'}</span>
+      </div>`;
+    }).join('');
+
+    grid.querySelectorAll('.gallery-item').forEach(el => {
+      el.addEventListener('click', () => {
+        const idx = parseInt(el.dataset.index);
+        if (galleryItems[idx]) showPreview(galleryItems[idx]);
+      });
+    });
+  }
+
+  // ==================== Shutter Action ====================
+  function onShutterPress() {
+    if (currentMode === 'photo') {
+      capturePhoto();
+    } else {
+      if (isRecording) {
+        stopRecording();
+      } else {
+        startRecording();
+      }
+    }
+  }
+
+  // ==================== UI Helpers ====================
+  let toastTimeout = null;
+  function showToast(msg) {
+    toast.textContent = msg;
+    toast.classList.add('show');
+    clearTimeout(toastTimeout);
+    toastTimeout = setTimeout(() => toast.classList.remove('show'), 2000);
+  }
+
+  function showPanel(id) {
+    $(`${id}-overlay`).classList.add('show');
+    $(id).classList.add('show');
+  }
+  function hidePanel(id) {
+    $(`${id}-overlay`).classList.remove('show');
+    $(id).classList.remove('show');
+  }
+
+  // ==================== 初始化设置面板交互 ====================
+  function initSettings() {
+    // 时间开关
+    $('toggle-time').addEventListener('click', () => {
+      wmState.showTime = !wmState.showTime;
+      $('toggle-time').classList.toggle('on', wmState.showTime);
+      updateWatermarkOverlay();
+    });
+    $('toggle-date').addEventListener('click', () => {
+      wmState.showDate = !wmState.showDate;
+      $('toggle-date').classList.toggle('on', wmState.showDate);
+      updateWatermarkOverlay();
+    });
+    $('toggle-location').addEventListener('click', () => {
+      wmState.showLocation = !wmState.showLocation;
+      $('toggle-location').classList.toggle('on', wmState.showLocation);
+      updateWatermarkOverlay();
+    });
+    $('toggle-custom').addEventListener('click', () => {
+      wmState.showCustom = !wmState.showCustom;
+      $('toggle-custom').classList.toggle('on', wmState.showCustom);
+      updateWatermarkOverlay();
+    });
+
+    // 自定义文本
+    $('custom-text-input').addEventListener('input', (e) => {
+      wmState.customText = e.target.value.trim();
+      updateWatermarkOverlay();
+    });
+
+    // 位置选择
+    document.querySelectorAll('#position-options .option-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('#position-options .option-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        wmState.position = btn.dataset.pos;
+        updateWatermarkOverlay();
+      });
+    });
+
+    // 颜色选择
+    document.querySelectorAll('.color-dot').forEach(dot => {
+      dot.addEventListener('click', () => {
+        document.querySelectorAll('.color-dot').forEach(d => d.classList.remove('active'));
+        dot.classList.add('active');
+        wmState.color = dot.dataset.color;
+        updateWatermarkOverlay();
+      });
+    });
+
+    // 大小选择
+    document.querySelectorAll('#size-options .option-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('#size-options .option-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        wmState.size = btn.dataset.size;
+        updateWatermarkOverlay();
+      });
+    });
+
+    // 面板开关
+    $('btn-watermark-settings').addEventListener('click', () => showPanel('watermark-panel'));
+    $('watermark-panel-overlay').addEventListener('click', () => hidePanel('watermark-panel'));
+
+    // 相册面板
+    $('btn-gallery').addEventListener('click', () => showPanel('gallery-panel'));
+    $('gallery-panel-overlay').addEventListener('click', () => hidePanel('gallery-panel'));
+
+    // 设置按钮（完整设置）
+    $('btn-settings').addEventListener('click', () => showPanel('watermark-panel'));
+
+    // 预览关闭
+    $('preview-close').addEventListener('click', () => {
+      $('preview-modal').classList.remove('show');
+      // 清理之前的视频播放
+      const container = $('preview-media-container');
+      const vid = container.querySelector('video');
+      if (vid) { vid.pause(); vid.src = ''; }
+      container.innerHTML = '';
+    });
+
+    // 切换摄像头
+    $('btn-switch-camera').addEventListener('click', switchCamera);
+
+    // 模式切换
+    modeBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (isRecording) {
+          showToast('⏹️ 请先停止录像');
+          return;
+        }
+        modeBtns.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        currentMode = btn.dataset.mode;
+      });
+    });
+
+    // 快门
+    shutterBtn.addEventListener('click', onShutterPress);
+  }
+
+  // ==================== 定时更新时间 ====================
+  setInterval(() => {
+    if (wmState.showTime || wmState.showDate) updateWatermarkOverlay();
+  }, 1000);
+
+  // ==================== 键盘快捷键 ====================
+  document.addEventListener('keydown', (e) => {
+    if (e.key === ' ' || e.key === 'Enter') { onShutterPress(); e.preventDefault(); }
+  });
+
+  // ==================== 启动 ====================
+  async function init() {
+    initSettings();
+    startLocation();
+    await startCamera();
+    updateWatermarkOverlay();
+  }
+
+  // 页面可见性变化时处理相机
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      // 页面隐藏，如果正在录制继续
+    } else {
+      // 页面重新可见，如果相机流丢失则重启
+      if (!video.srcObject) {
+        startCamera();
+      }
+    }
+  });
+
+  init();
+})();
+</script>
+</body>
+</html>
