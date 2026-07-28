@@ -684,6 +684,17 @@
       </div>
     </div>
 
+    <div class="setting-group" id="poi-section" style="display:none">
+      <div class="setting-group-title">附近地点</div>
+      <div class="setting-row">
+        <span class="setting-label">使用最近地点</span>
+        <div class="toggle" id="toggle-poi"><div class="knob"></div></div>
+      </div>
+      <div class="setting-row" style="border-bottom:none;flex-direction:column;align-items:stretch;gap:6px;">
+        <div id="poi-list" style="max-height:160px;overflow-y:auto;display:flex;flex-direction:column;gap:4px;"></div>
+      </div>
+    </div>
+
     <div class="setting-group">
       <div class="setting-group-title">水印位置</div>
       <div class="option-group" id="position-options">
@@ -777,6 +788,9 @@
   let locationError = false;
 
   // 水印状态
+  let nearByPois = [];      // 附近地点列表
+  let selectedPoi = '';     // 用户选择的附近地点
+
   const wmState = {
     showTime: true,
     showDate: true,
@@ -785,6 +799,7 @@
     customText: '',
     useManualAddr: false,
     manualAddr: '',
+    usePoi: false,          // 是否使用附近地点
     position: 'tl',
     color: 'white',
     size: 'md',
@@ -830,7 +845,16 @@
 
     setEl('wm-time', wmState.showTime ? formatTime() : '');
     setEl('wm-date', wmState.showDate ? formatDate() : '');
-    const locText = wmState.useManualAddr ? wmState.manualAddr : (locationAddress || (locationError ? '定位失败' : '定位中...'));
+    let locText = '定位中...';
+    if (wmState.useManualAddr) {
+      locText = wmState.manualAddr;
+    } else if (wmState.usePoi && selectedPoi) {
+      locText = selectedPoi;
+    } else if (locationAddress) {
+      locText = locationAddress;
+    } else if (locationError) {
+      locText = '定位失败';
+    }
     setEl('wm-location', wmState.showLocation ? locText : '');
     setEl('wm-custom', wmState.showCustom && wmState.customText ? wmState.customText : '');
 
@@ -885,20 +909,42 @@
         // 服务1: 高德地图（国内最准，优先）
         geoPromises.push(
           fetch(`https://restapi.amap.com/v3/geocode/regeo?output=JSON&location=${currentLocation.lng},${currentLocation.lat}&key=${AMAP_KEY}&radius=1000&extensions=all`,
-            { signal: AbortSignal.timeout(5000) })
+            { signal: AbortSignal.timeout(8000) })
             .then(r => r.ok ? r.json() : null)
             .then(d => {
               if (d?.status === '1' && d.regeocode) {
-                const ac = d.regeocode.addressComponent;
-                if (ac) {
-                  const parts = [];
-                  if (ac.city) parts.push(ac.city.replace(/^市$/, '').replace(/市$/, ''));
-                  if (ac.district) parts.push(ac.district);
-                  if (ac.township) parts.push(ac.township);
-                  if (ac.streetNumber?.street) parts.push(ac.streetNumber.street + (ac.streetNumber.number || ''));
-                  return parts.filter(Boolean).length ? parts.join(' ') : d.regeocode.formatted_address;
+                const rg = d.regeocode;
+                const ac = rg.addressComponent;
+                // 构建详细地址: 省市区 + 街道 + 门牌号 + 最近建筑
+                const parts = [];
+                if (ac.province && ac.province !== ac.city) parts.push(ac.province);
+                if (ac.city) parts.push(ac.city.replace(/市$/, ''));
+                if (ac.district) parts.push(ac.district);
+                if (ac.township) parts.push(ac.township);
+                if (ac.streetNumber?.street) {
+                  let street = ac.streetNumber.street;
+                  if (ac.streetNumber.number) street += ac.streetNumber.number;
+                  parts.push(street);
                 }
-                return d.regeocode.formatted_address;
+                // 最近的地标/建筑
+                let nearestPoi = '';
+                if (ac.building?.name && ac.building.name.length > 1) {
+                  nearestPoi = ac.building.name;
+                } else if (rg.pois && rg.pois.length > 0) {
+                  nearestPoi = rg.pois[0].name;
+                }
+                if (nearestPoi) parts.push(nearestPoi);
+
+                // 保存 POI 列表用于用户选择
+                if (rg.pois && rg.pois.length > 0) {
+                  nearByPois = rg.pois.map(p => ({ name: p.name, dist: p.distance, addr: p.address, type: p.type }));
+                } else if (rg.aois && rg.aois.length > 0) {
+                  nearByPois = rg.aois.map(a => ({ name: a.name, dist: a.distance, addr: a.address, type: a.type }));
+                } else {
+                  nearByPois = [];
+                }
+
+                return parts.filter(Boolean).join(' ') || rg.formatted_address;
               }
               return null;
             })
@@ -955,6 +1001,7 @@
         locationError = false;
         updateWatermarkOverlay();
         updateLocationHint();
+        renderPoiList();
       },
       (err) => {
         console.warn('定位失败:', err.message);
@@ -988,13 +1035,46 @@
     if (!hint) return;
     if (wmState.useManualAddr) {
       hint.textContent = '手动模式: ' + (wmState.manualAddr || '未输入地址');
+    } else if (wmState.usePoi && selectedPoi) {
+      hint.textContent = '附近地点: ' + selectedPoi;
     } else if (locationAddress) {
       hint.textContent = '自动定位: ' + locationAddress;
     } else if (locationError) {
-      hint.textContent = '⚠️ 自动定位失败，请开启「手动输入地址」并填写';
+      hint.textContent = '自动定位失败，可开启「手动输入地址」';
     } else {
-      hint.textContent = '正在获取位置... 如果定位失败，请在下面「手动输入地址」中填写';
+      hint.textContent = '正在获取位置...';
     }
+  }
+
+  function renderPoiList() {
+    const list = $('poi-list');
+    const section = $('poi-section');
+    if (!list || !section) return;
+    if (!nearByPois || nearByPois.length === 0) { section.style.display = 'none'; return; }
+    section.style.display = 'block';
+    list.innerHTML = nearByPois.map((p, i) => {
+      const dist = parseInt(p.dist) || 0;
+      const distText = dist > 1000 ? (dist/1000).toFixed(1)+'km' : dist+'m';
+      const active = selectedPoi === p.name ? 'active' : '';
+      return `<button class="poi-item ${active}" data-idx="${i}" style="display:flex;align-items:center;justify-content:space-between;width:100%;padding:8px 12px;border-radius:10px;background:${selectedPoi === p.name ? 'rgba(0,122,255,0.2)' : 'rgba(255,255,255,0.06)'};color:#fff;font-size:14px;text-align:left;border:none;cursor:pointer;">
+        <span style="flex:1">${p.name}</span>
+        <span style="font-size:11px;color:rgba(255,255,255,0.4);margin-left:8px;flex-shrink:0;">${distText}</span>
+      </button>`;
+    }).join('');
+
+    list.querySelectorAll('.poi-item').forEach(el => {
+      el.addEventListener('click', () => {
+        const idx = parseInt(el.dataset.idx);
+        const poi = nearByPois[idx];
+        if (!poi) return;
+        selectedPoi = poi.name;
+        wmState.usePoi = true;
+        $('toggle-poi').classList.add('on');
+        renderPoiList();
+        updateLocationHint();
+        updateWatermarkOverlay();
+      });
+    });
   }
 
   // ==================== 相机初始化 ====================
@@ -1438,6 +1518,16 @@
     // 刷新定位
     $('btn-refresh-location').addEventListener('click', () => {
       refreshLocation();
+    });
+
+    // POI 附近地点开关
+    $('toggle-poi').addEventListener('click', () => {
+      wmState.usePoi = !wmState.usePoi;
+      $('toggle-poi').classList.toggle('on', wmState.usePoi);
+      if (!wmState.usePoi) selectedPoi = '';
+      renderPoiList();
+      updateLocationHint();
+      updateWatermarkOverlay();
     });
 
     // 位置选择
