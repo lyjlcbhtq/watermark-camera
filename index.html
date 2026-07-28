@@ -871,6 +871,33 @@
 
   // 高德地图 API Key（用户申请的）
   const AMAP_KEY = 'b6045d9bbac9de8d8642a71580218562';
+
+  // WGS-84 (GPS) 转 GCJ-02 (高德/中国地图)
+  function wgs84ToGcj02(wgsLat, wgsLng) {
+    const a = 6378245.0, ee = 0.00669342162296594323;
+    function transformLat(x, y) {
+      let ret = -100 + 2*x + 3*y + 0.2*y*y + 0.1*x*y + 0.2*Math.sqrt(Math.abs(x));
+      ret += (20*Math.sin(6*x*Math.PI) + 20*Math.sin(2*x*Math.PI)) * 2/3;
+      ret += (20*Math.sin(y*Math.PI) + 40*Math.sin(y/3*Math.PI)) * 2/3;
+      ret += (160*Math.sin(y/12*Math.PI) + 320*Math.sin(y*Math.PI/30)) * 2/3;
+      return ret;
+    }
+    function transformLng(x, y) {
+      let ret = 300 + x + 2*y + 0.1*x*x + 0.1*x*y + 0.1*Math.sqrt(Math.abs(x));
+      ret += (20*Math.sin(6*x*Math.PI) + 20*Math.sin(2*x*Math.PI)) * 2/3;
+      ret += (20*Math.sin(x*Math.PI) + 40*Math.sin(x/3*Math.PI)) * 2/3;
+      ret += (150*Math.sin(x/12*Math.PI) + 300*Math.sin(x/30*Math.PI)) * 2/3;
+      return ret;
+    }
+    let dlat = transformLat(wgsLng-105, wgsLat-35);
+    let dlng = transformLng(wgsLng-105, wgsLat-35);
+    const rad = wgsLat/180*Math.PI;
+    let m = 1 - ee*Math.pow(Math.sin(rad), 2);
+    const sq = Math.sqrt(m);
+    dlat = (dlat*180)/((a*(1-ee))/(m*sq)*Math.PI);
+    dlng = (dlng*180)/(a/sq*Math.cos(rad)*Math.PI);
+    return { lat: wgsLat+dlat, lng: wgsLng+dlng };
+  }
   // ==================== 位置获取（改进版） ====================
   function startLocation() {
     if (!navigator.geolocation) {
@@ -906,9 +933,10 @@
           return parts.length ? parts.join(' ') : fallback || null;
         }
 
-        // 服务1: 高德地图（国内最准，优先）
+        // 服务1: 高德地图（GPS转GCJ-02坐标后再查询，避免偏移）
+        const gcj = wgs84ToGcj02(currentLocation.lat, currentLocation.lng);
         geoPromises.push(
-          fetch(`https://restapi.amap.com/v3/geocode/regeo?output=JSON&location=${currentLocation.lng},${currentLocation.lat}&key=${AMAP_KEY}&radius=1000&extensions=all`,
+          fetch(`https://restapi.amap.com/v3/geocode/regeo?output=JSON&location=${gcj.lng},${gcj.lat}&key=${AMAP_KEY}&radius=500&extensions=all`,
             { signal: AbortSignal.timeout(8000) })
             .then(r => r.ok ? r.json() : null)
             .then(d => {
