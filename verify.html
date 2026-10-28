@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#f5f7f2">
+  <title>核对文件与本机记录 · 水印相机</title>
+  <style>
+    :root{color-scheme:light;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;color:#25372f;background:#f5f7f2}*{box-sizing:border-box}body{margin:0;padding:24px 18px 40px}main{max-width:680px;margin:0 auto}a{color:#39765b;text-decoration:none}header{margin:24px 0}h1{font-size:26px;margin:0 0 12px;line-height:1.35}p{font-size:14px;line-height:1.8}header p{color:#69786e}.notice{background:#edf1e6;border:1px solid #dbe5ce;border-radius:16px;padding:14px 18px;color:#516446}.notice strong{display:block;font-size:14px}.notice p{margin:6px 0 0;font-size:13px}.card{background:#fff;border:1px solid #e3e9e1;border-radius:18px;padding:20px;margin-top:18px}fieldset{margin:0;padding:0;border:0}label{display:block;font-size:14px;font-weight:600;margin-bottom:10px}input{display:block;width:100%;font:inherit;font-size:13px;padding:10px;border:1px solid #dbe5d6;border-radius:10px;background:#f8faf6;margin-bottom:20px}input::file-selector-button{border:0;background:#e7f1e8;color:#39765b;padding:8px 10px;border-radius:8px;font:inherit;margin-right:10px}button{min-height:44px;padding:11px 18px;border:0;border-radius:12px;background:#39765b;color:#fff;font:inherit;font-size:14px;font-weight:600;cursor:pointer}button:disabled{opacity:.5;cursor:default}button.secondary{background:#e7f1e8;color:#39765b}button:focus-visible,input:focus-visible,a:focus-visible{outline:3px solid #73a489;outline-offset:4px}.actions{display:flex;gap:10px;flex-wrap:wrap}progress{display:block;width:100%;margin-top:18px;accent-color:#39765b}progress[hidden]{display:none}#status{margin-bottom:0;overflow-wrap:anywhere}#status[data-state="match"]{color:#39765b}#status[data-state="mismatch"],#status[data-state="error"]{color:#975045}#details{overflow-wrap:anywhere}h2{font-size:17px;margin:0 0 10px}pre{white-space:pre-wrap;word-break:break-word;font-size:12px;line-height:1.7;background:#f6f8f3;padding:14px;border-radius:10px;color:#52634d;max-height:480px;overflow:auto}.small{font-size:12px;color:#69786e}footer{font-size:12px;line-height:1.8;color:#69786e;margin-top:24px}@media(max-width:360px){h1{font-size:23px}.card{padding:16px}}@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+  </style>
+  <script src="./evidence.js" defer></script>
+  <script src="./verify.js" defer></script>
+</head>
+<body>
+<main>
+  <a href="./">← 返回水印相机</a>
+  <header>
+    <h1>核对文件与本机记录</h1>
+    <p>选择照片或视频，以及对应的 JSON 校验记录。计算在本机完成，文件和位置不会上传。</p>
+  </header>
+  <aside class="notice" aria-label="校验能力说明">
+    <strong>这不是时间、地点或来源的真实性认证</strong>
+    <p>匹配只表示文件的 SHA-256 与所选记录一致。文件和记录都可能被重写；本工具没有可信时间戳或第三方存证能力，也不作司法采信承诺。</p>
+  </aside>
+  <form class="card" id="verify-form">
+    <fieldset id="file-fields">
+      <label for="media-file">1. 选择照片或视频文件</label>
+      <input type="file" id="media-file" accept="image/*,video/*" required>
+      <label for="record-file">2. 选择对应的校验记录（JSON）</label>
+      <input type="file" id="record-file" accept="application/json,.json" required>
+    </fieldset>
+    <div class="actions">
+      <button type="submit" id="verify-button">开始核对</button>
+      <button type="button" id="cancel-button" class="secondary" hidden>取消</button>
+    </div>
+    <progress id="verify-progress" max="1" value="0" aria-label="文件校验进度" hidden></progress>
+    <p id="status" role="status" aria-live="polite">尚未开始核对。</p>
+  </form>
+  <section class="card" id="details" hidden>
+    <h2>所选记录中的信息</h2>
+    <p class="small">以下信息来自你选择的 JSON 文件，未经认证；即使文件核对通过，也不代表这些信息真实。</p>
+    <pre id="metadata"></pre>
+  </section>
+  <footer>请保留应用生成的完整水印成片和校验记录。水印成片经过浏览器合成，并非未经处理的相机原始码流。</footer>
+</main>
+</body>
+</html>

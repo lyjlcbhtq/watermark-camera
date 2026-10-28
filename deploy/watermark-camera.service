@@ -1,0 +1,32 @@
+[Unit]
+Description=Watermark Camera static app and same-origin geocoding
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=watermark-camera
+Group=watermark-camera
+WorkingDirectory=/opt/watermark-camera/current
+EnvironmentFile=/etc/watermark-camera.env
+ExecStart=/usr/bin/node /opt/watermark-camera/current/server.mjs
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=12
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=true
+UMask=0077
+MemoryMax=384M
+TasksMax=64
+
+[Install]
+WantedBy=multi-user.target

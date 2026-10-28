@@ -1,0 +1,64 @@
+# Place inside nginx's http {} context, for example /etc/nginx/conf.d/camera.conf.
+# Replace camera.example.com and both certificate paths before nginx -t.
+# This format deliberately excludes query strings, including GPS coordinates.
+log_format camera_no_query '$remote_addr [$time_local] '
+                           '"$request_method $uri $server_protocol" $status $body_bytes_sent';
+
+server {
+    listen 80;
+    server_name camera.example.com;
+    return 308 https://camera.example.com$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name camera.example.com;
+    ssl_certificate /etc/letsencrypt/live/camera.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/camera.example.com/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_cache shared:CAMERA_TLS:10m;
+    ssl_session_timeout 1d;
+
+    access_log /var/log/nginx/watermark-camera.access.log camera_no_query;
+    error_log /var/log/nginx/watermark-camera.error.log warn;
+    add_header Strict-Transport-Security "max-age=604800" always;
+    client_max_body_size 1m;
+    client_header_timeout 10s;
+    client_body_timeout 10s;
+    send_timeout 15s;
+
+    # Covers /api/... and configured subpaths such as /watermark-camera/api/....
+    # No API access/error log: proxy failures may otherwise include GPS query strings.
+    location ~ ^/(?:[a-zA-Z0-9_-]+/)*api/reverse-geocode$ {
+        access_log off;
+        error_log /dev/null crit;
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header Connection "";
+        proxy_connect_timeout 2s;
+        proxy_read_timeout 8s;
+        proxy_send_timeout 8s;
+        proxy_cache off;
+        proxy_buffering off;
+    }
+
+    # All assets go through the explicit whitelist in server.mjs. Do not expose
+    # /opt/watermark-camera/current as a general nginx root/autoindex directory.
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header Connection "";
+        proxy_connect_timeout 2s;
+        proxy_read_timeout 15s;
+        proxy_send_timeout 15s;
+        proxy_cache off;
+    }
+}

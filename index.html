@@ -8,576 +8,220 @@
   <meta name="apple-mobile-web-app-title" content="水印相机">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='100' fill='%231a1a2e'/%3E%3Ctext x='256' y='320' text-anchor='middle' font-size='200'%3E📷%3C/text%3E%3C/svg%3E">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="theme-color" content="#161b19">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <title>简单水印相机</title>
 
   <style>
-    /* ==================== Reset & Base ==================== */
+    :root {
+      color-scheme: dark;
+      --camera: #161b19;
+      --camera-text: #f3f5ef;
+      --camera-muted: #a9b5ad;
+      --paper: #f5f7f2;
+      --surface: #fff;
+      --ink: #25372f;
+      --muted: #69786e;
+      --line: #e3e9e1;
+      --accent: #39765b;
+      --accent-soft: #e7f1e8;
+      --camera-accent: #c6dfc4;
+    }
     *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body {
-      width: 100%; height: 100%;
-      overflow: hidden;
-      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", "Helvetica Neue", sans-serif;
-      background: #000;
-      color: #fff;
-      -webkit-user-select: none;
-      user-select: none;
-      -webkit-tap-highlight-color: transparent;
-      touch-action: manipulation;
-    }
-    button { font-family: inherit; border: none; outline: none; cursor: pointer; touch-action: manipulation; }
-    input { font-family: inherit; outline: none; border: none; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: var(--camera); color: var(--camera-text); font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", "Helvetica Neue", sans-serif; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+    button, input { font: inherit; }
+    button { border: 0; cursor: pointer; touch-action: manipulation; }
+    button:focus-visible, input:focus-visible { outline: 3px solid #73a489; outline-offset: 4px; }
+    button:disabled { opacity: .5; cursor: default; }
+    button:active:not(:disabled) { opacity: .75; }
+    input { min-width: 0; -webkit-user-select: text; user-select: text; }
+    .ui-icon { width: 22px; height: 22px; display: inline-block; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; vertical-align: middle; }
+    .icon-definitions { position: absolute; width: 0; height: 0; overflow: hidden; pointer-events: none; }
+    #app { position: relative; width: 100%; height: 100%; overflow: hidden; background: var(--camera); }
 
-    /* ==================== App Container ==================== */
-    #app {
-      position: relative;
-      width: 100%; height: 100%;
-      overflow: hidden;
-      background: #000;
-    }
+    /* The preview and export share a frame; controls stay outside that frame. */
+    #camera-container { position: absolute; inset: 0; overflow: hidden; background: var(--camera); }
+    #camera-container video, #watermark-preview { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 100%; height: 100%; border-radius: 8px; }
+    #camera-container video { object-fit: contain; }
+    #watermark-overlay { position: absolute; inset: 0; pointer-events: none; }
+    #watermark-preview { pointer-events: none; }
+    .watermark-corner { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); pointer-events: none; }
 
-    /* ==================== Camera Preview ==================== */
-    #camera-container {
-      position: absolute;
-      top: 0; left: 0;
-      width: 100%; height: 100%;
-      overflow: hidden;
-      background: #111;
-    }
-    #camera-container video {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-    }
-
-    /* ==================== Watermark Overlay (实时预览) ==================== */
-    #watermark-overlay {
-      position: absolute;
-      top: 0; left: 0;
-      width: 100%; height: 100%;
-      pointer-events: none;
-      padding: 20px 16px;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-    }
-    /* 水印区域 - 四角定位容器 */
-    .watermark-corner {
-      position: absolute;
-      pointer-events: auto;
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-    .watermark-corner .wm-line {
-      font-size: 16px;
-      font-weight: 600;
-      text-shadow: 0 1px 4px rgba(0,0,0,0.8), 0 0 2px rgba(0,0,0,0.5);
-      letter-spacing: 0.5px;
-      line-height: 1.3;
-      max-width: 85vw;
-      display: -webkit-box;
-      -webkit-box-orient: vertical;
-      -webkit-line-clamp: 2;
-      overflow: hidden;
-      word-break: break-all;
-    }
-    .wm-size-sm .wm-line { font-size: 13px; }
-    .wm-size-md .wm-line { font-size: 16px; }
-    .wm-size-lg .wm-line { font-size: 20px; }
-    .wm-size-xl .wm-line { font-size: 24px; }
-    /* 小屏适配 */
-    @media (max-width: 375px) {
-      .wm-size-md .wm-line { font-size: 14px; }
-      .wm-size-lg .wm-line { font-size: 17px; }
-      .wm-size-xl .wm-line { font-size: 20px; }
-    }
-    .wm-corner-tl { top: 60px; left: 16px; align-items: flex-start; }
-    .wm-corner-tr { top: 60px; right: 16px; align-items: flex-end; }
-    .wm-corner-bl { bottom: 130px; left: 16px; align-items: flex-start; }
-    .wm-corner-br { bottom: 130px; right: 16px; align-items: flex-end; }
-
-    /* 水印颜色类 */
-    .wm-color-white .wm-line { color: #fff; }
-    .wm-color-yellow .wm-line { color: #ffd700; }
-    .wm-color-red .wm-line { color: #ff3b30; }
-    .wm-color-blue .wm-line { color: #5ac8fa; }
-    .wm-color-green .wm-line { color: #34c759; }
-    .wm-color-orange .wm-line { color: #ff9500; }
-
-    /* ==================== 顶部栏 ==================== */
-    #top-bar {
-      position: absolute;
-      top: 0; left: 0; right: 0;
-      padding: 54px 16px 12px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      background: linear-gradient(to bottom, rgba(0,0,0,0.6) 0%, transparent 100%);
-      z-index: 10;
-    }
-    #top-bar .title {
-      font-size: 18px;
-      font-weight: 700;
-      text-shadow: 0 1px 4px rgba(0,0,0,0.5);
-    }
-    .top-btn {
-      width: 40px; height: 40px;
-      border-radius: 50%;
-      background: rgba(255,255,255,0.15);
-      backdrop-filter: blur(8px);
-      -webkit-backdrop-filter: blur(8px);
-      color: #fff;
-      font-size: 18px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: background 0.2s;
-    }
-    .top-btn:active { background: rgba(255,255,255,0.3); }
-
-    /* ==================== 模式切换 ==================== */
-    #mode-bar {
-      position: absolute;
-      top: 104px;
-      left: 50%;
-      transform: translateX(-50%);
-      z-index: 10;
-      display: flex;
-      background: rgba(0,0,0,0.5);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      border-radius: 22px;
-      padding: 3px;
-      gap: 2px;
-    }
-    .mode-btn {
-      padding: 8px 22px;
-      border-radius: 19px;
-      font-size: 14px;
-      font-weight: 600;
-      color: rgba(255,255,255,0.7);
-      background: transparent;
-      transition: all 0.3s ease;
-    }
-    .mode-btn.active {
-      background: #007aff;
-      color: #fff;
-      box-shadow: 0 2px 10px rgba(0,122,255,0.4);
-    }
-
-    /* ==================== 底部控制区 ==================== */
-    #bottom-bar {
-      position: absolute;
-      bottom: 0; left: 0; right: 0;
-      padding: 16px 24px 40px;
-      background: linear-gradient(to top, rgba(0,0,0,0.7) 0%, transparent 100%);
-      z-index: 10;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-    .bottom-btn {
-      width: 44px; height: 44px;
-      border-radius: 50%;
-      background: rgba(255,255,255,0.12);
-      backdrop-filter: blur(8px);
-      -webkit-backdrop-filter: blur(8px);
-      color: #fff;
-      font-size: 18px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: all 0.2s;
-    }
-    .bottom-btn:active { background: rgba(255,255,255,0.25); transform: scale(0.92); }
-
-    /* 快门按钮 */
-    #shutter-btn {
-      width: 76px; height: 76px;
-      border-radius: 50%;
-      background: transparent;
-      border: 4px solid rgba(255,255,255,0.9);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: all 0.2s;
-      position: relative;
-    }
-    #shutter-btn .inner {
-      width: 60px; height: 60px;
-      border-radius: 50%;
-      background: #fff;
-      transition: all 0.3s;
-    }
-    #shutter-btn:active .inner { transform: scale(0.85); }
-    /* 录像中状态 */
-    #shutter-btn.recording { border-color: #ff3b30; }
-    #shutter-btn.recording .inner {
-      width: 28px; height: 28px;
-      border-radius: 6px;
-      background: #ff3b30;
-    }
-    #shutter-btn.recording { animation: pulse-record 1.5s ease-in-out infinite; }
-    @keyframes pulse-record {
-      0%, 100% { box-shadow: 0 0 0 0 rgba(255,59,48,0.4); }
-      50% { box-shadow: 0 0 0 12px rgba(255,59,48,0); }
-    }
-
-    /* 录像计时器 */
-    #recording-timer {
-      display: none;
-      position: absolute;
-      top: 156px;
-      left: 50%;
-      transform: translateX(-50%);
-      z-index: 10;
-      background: rgba(0,0,0,0.5);
-      backdrop-filter: blur(8px);
-      -webkit-backdrop-filter: blur(8px);
-      padding: 4px 14px;
-      border-radius: 14px;
-      font-size: 14px;
-      font-weight: 600;
-      color: #ff3b30;
-      align-items: center;
-      gap: 6px;
-    }
+    #top-bar { position: absolute; top: 0; left: 0; right: 0; z-index: 10; display: flex; align-items: center; gap: 8px; padding: calc(env(safe-area-inset-top, 0px) + 12px) 20px 8px; }
+    .camera-brand { display: flex; align-items: center; gap: 10px; margin-right: auto; min-width: 0; }
+    .brand-mark { display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; color: var(--camera-accent); border: 1px solid #536653; border-radius: 11px; }
+    .brand-mark .ui-icon { width: 21px; height: 21px; }
+    .brand-title { font-size: 16px; font-weight: 650; letter-spacing: .5px; white-space: nowrap; }
+    #camera-quality { margin-top: 4px; color: var(--camera-muted); font-size: 10px; font-weight: 500; letter-spacing: .9px; white-space: nowrap; }
+    #location-summary { display: block; margin-top: 3px; min-height: 14px; background: transparent; color: #d7c7a2; font-size: 10px; line-height: 14px; text-align: left; white-space: nowrap; }
+    #location-summary[data-precise="true"] { color: #bad6bb; }
+    .top-btn { display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; flex-shrink: 0; border-radius: 50%; color: #dce6dc; background: #252d28; }
+    #mode-bar { position: absolute; bottom: calc(env(safe-area-inset-bottom, 0px) + 110px); left: 50%; transform: translateX(-50%); z-index: 10; display: flex; width: max-content; padding: 3px; gap: 4px; border-radius: 24px; background: #222b25; }
+    .mode-btn { display: flex; align-items: center; justify-content: center; gap: 7px; min-width: 88px; height: 34px; padding: 0 18px; border-radius: 21px; color: #b3c1b5; background: transparent; font-size: 13px; font-weight: 600; white-space: nowrap; }
+    .mode-btn .ui-icon { width: 16px; height: 16px; }
+    .mode-btn.active { color: #263d2e; background: var(--camera-accent); }
+    #bottom-bar { position: absolute; bottom: 0; left: 0; right: 0; z-index: 10; display: flex; align-items: center; justify-content: space-between; padding: 12px 34px calc(env(safe-area-inset-bottom, 0px) + 16px); }
+    .bottom-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; width: 56px; height: 64px; color: #d0dbcf; background: transparent; font-size: 11px; letter-spacing: 1px; }
+    .bottom-icon { width: 38px; height: 34px; display: flex; align-items: center; justify-content: center; border: 1px solid #506253; border-radius: 10px; }
+    #btn-watermark-settings .bottom-icon { background: #29372d; border-color: #415a45; color: var(--camera-accent); }
+    #shutter-btn { position: relative; display: flex; align-items: center; justify-content: center; width: 76px; height: 76px; flex-shrink: 0; border-radius: 50%; border: 2px solid #e8f0e3; background: transparent; }
+    #shutter-btn .inner { width: 62px; height: 62px; border-radius: 50%; background: #e8f0e3; transition: transform .15s, border-radius .15s; }
+    #shutter-btn:active .inner { transform: scale(.9); }
+    #shutter-btn.video-mode .inner { background: #d7776c; }
+    #shutter-btn.recording { border-color: #ef9b8f; }
+    #shutter-btn.recording .inner { width: 28px; height: 28px; border-radius: 7px; background: #ed8b7d; }
+    #recording-timer { display: none; position: absolute; top: calc(env(safe-area-inset-top, 0px) + 82px); left: 50%; transform: translateX(-50%); z-index: 10; align-items: center; gap: 7px; height: 24px; padding: 0 11px; border-radius: 8px; background: #3c2825; color: #ffc2b8; font-size: 12px; font-variant-numeric: tabular-nums; letter-spacing: 1px; }
+    #recording-audio-status { font-size: 10px; letter-spacing: 0; }
     #recording-timer.show { display: flex; }
-    #recording-timer .dot {
-      width: 8px; height: 8px;
-      border-radius: 50%;
-      background: #ff3b30;
-      animation: blink 1s step-end infinite;
-    }
-    @keyframes blink { 50% { opacity: 0; } }
+    #recording-timer .dot { width: 5px; height: 5px; border-radius: 50%; background: #f29b8b; }
 
-    /* ==================== 面板 (设置/相册) ==================== */
-    .panel-overlay {
-      position: fixed;
-      top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(0,0,0,0.5);
-      z-index: 50;
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity 0.3s ease;
-    }
-    .panel-overlay.show {
-      opacity: 1;
-      pointer-events: auto;
-    }
-    .panel {
-      position: fixed;
-      left: 0; right: 0;
-      bottom: 0;
-      z-index: 51;
-      background: #1c1c1e;
-      border-radius: 20px 20px 0 0;
-      padding: 20px 20px 40px;
-      max-height: 80vh;
-      overflow-y: auto;
-      transform: translateY(100%);
-      transition: transform 0.35s cubic-bezier(0.32,0.72,0,1);
-    }
-    .panel.show {
-      transform: translateY(0);
-    }
-    .panel-handle {
-      width: 36px; height: 4px;
-      border-radius: 2px;
-      background: rgba(255,255,255,0.2);
-      margin: 0 auto 16px;
-    }
-    .panel-title {
-      font-size: 18px;
-      font-weight: 700;
-      margin-bottom: 20px;
-      text-align: center;
-    }
+    /* Light, scrollable sheets with one clear action in the header. */
+    .panel-overlay { position: fixed; inset: 0; z-index: 50; background: rgba(11, 24, 16, .48); opacity: 0; pointer-events: none; transition: opacity .2s; }
+    .panel-overlay.show { opacity: 1; pointer-events: auto; }
+    .panel { color-scheme: light; visibility: hidden; position: fixed; left: 0; right: 0; bottom: 0; z-index: 51; max-height: 88vh; max-height: 88dvh; overflow-y: auto; overscroll-behavior: contain; padding: 0 20px calc(env(safe-area-inset-bottom, 0px) + 24px); background: var(--paper); color: var(--ink); border-radius: 28px 28px 0 0; transform: translateY(100%); transition: transform .25s cubic-bezier(.2,.7,.2,1); scroll-padding-top: 112px; }
+    .panel.show { visibility: visible; transform: translateY(0); }
+    .sheet-header { position: sticky; top: 0; z-index: 2; padding: 12px 0 20px; background: var(--paper); }
+    .panel-handle { width: 32px; height: 4px; margin: 0 auto 20px; background: #cfd9ce; border-radius: 4px; }
+    .panel-close { float: right; display: flex; align-items: center; justify-content: center; min-width: 56px; min-height: 40px; padding: 0 14px; margin-left: 10px; border-radius: 20px; color: var(--accent); background: var(--accent-soft); font-size: 13px; font-weight: 650; }
+    .panel-title { font-size: 23px; font-weight: 650; letter-spacing: -.5px; line-height: 1.25; }
+    .panel-subtitle { margin-top: 6px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+    .setting-group { padding: 17px 16px; margin-bottom: 12px; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); }
+    .setting-group-title { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; color: var(--muted); font-size: 12px; font-weight: 600; letter-spacing: .5px; }
+    .setting-group-title .ui-icon { width: 16px; height: 16px; }
+    .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 50px; padding: 10px 0; border-bottom: 1px solid #edf1eb; }
+    .setting-row:last-child { border-bottom: 0; padding-bottom: 0; }
+    .setting-label { color: var(--ink); font-size: 14px; font-weight: 500; }
+    .field-row { align-items: stretch; flex-direction: column; gap: 10px; }
+    .toggle { width: 46px; height: 28px; flex-shrink: 0; border-radius: 18px; position: relative; background: #dbe2da; }
+    .toggle.on { background: var(--accent); }
+    .toggle .knob { position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px #0002; transition: transform .15s; }
+    .toggle.on .knob { transform: translateX(18px); }
+    .option-group { display: flex; gap: 8px; }
+    .option-btn { display: flex; align-items: center; justify-content: center; flex: 1; min-width: 0; min-height: 42px; padding: 9px 4px; border: 1px solid var(--line); border-radius: 11px; color: #64736a; background: #f8faf6; font-size: 13px; font-weight: 500; }
+    .option-btn.active { background: var(--accent-soft); color: #2c674c; border-color: #a8c8ae; font-weight: 650; }
+    #quality-options { gap: 10px; }
+    #quality-options .option-btn { position: relative; min-height: 74px; flex-direction: column; gap: 5px; align-items: flex-start; padding: 12px; }
+    .quality-name { font-size: 15px; }
+    .quality-detail { color: var(--muted); font-size: 11px; font-weight: 400; }
+    #quality-options .option-btn.active::after { content: ''; position: absolute; top: 14px; right: 13px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+    .setting-hint { color: var(--muted); font-size: 12px; line-height: 1.65; overflow-wrap: anywhere; }
+    .quality-hint { margin-top: 11px; }
+    .color-options { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 2px; }
+    .color-dot { position: relative; width: 30px; height: 30px; flex-shrink: 0; border: 1px solid #00000012; border-radius: 50%; box-shadow: 0 0 0 4px #fff; }
+    .color-dot.active { outline: 2px solid var(--accent); outline-offset: 4px; }
+    #custom-text-input, #manual-addr-input, #vehicle-label, #order-label { display: block; width: 100%; border: 1px solid var(--line); border-radius: 10px; padding: 12px; background: #f5f7f2; color: var(--ink); font-size: 16px; line-height: 1.4; }
+    .provenance-note a { display: inline-block; margin-top: 12px; color: var(--accent); font-size: 12px; }
+    input::placeholder { color: #8b988d; font-size: 13px; }
+    .setting-action-btn { padding: 10px 13px; min-height: 40px; background: var(--accent-soft); border-radius: 10px; color: var(--accent); font-size: 12px; font-weight: 600; white-space: nowrap; }
+    .poi-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; min-height: 44px; border: 1px solid var(--line); border-radius: 10px; background: #f8faf6; color: var(--ink); text-align: left; }
+    .poi-item.active { color: var(--accent); background: var(--accent-soft); border-color: #a8c8ae; }
+    .poi-name { font-size: 13px; overflow-wrap: anywhere; }
+    .poi-distance { color: var(--muted); font-size: 11px; flex-shrink: 0; }
 
-    /* 设置项 */
-    .setting-group {
-      margin-bottom: 20px;
-    }
-    .setting-group-title {
-      font-size: 13px;
-      font-weight: 600;
-      color: rgba(255,255,255,0.5);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin-bottom: 10px;
-    }
-    .setting-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 12px 0;
-      border-bottom: 1px solid rgba(255,255,255,0.06);
-    }
-    .setting-row:last-child { border-bottom: none; }
-    .setting-label {
-      font-size: 15px;
-      font-weight: 500;
-    }
-    .setting-label .hint {
-      font-size: 12px;
-      color: rgba(255,255,255,0.4);
-      font-weight: 400;
-      display: block;
-      margin-top: 2px;
-    }
+    #gallery-panel { min-height: 55vh; }
+    #gallery-status { display: flex; align-items: center; padding: 12px 14px; margin-bottom: 18px; border-radius: 12px; background: #eaf1e7; color: #5a705d; font-size: 12px; line-height: 1.65; }
+    #gallery-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+    .gallery-item { position: relative; display: block; aspect-ratio: 1; overflow: hidden; border-radius: 12px; background: #e3ebe0; color: var(--accent); }
+    .gallery-item img { display: block; width: 100%; height: 100%; object-fit: cover; }
+    .gallery-placeholder { display: flex; width: 100%; height: 100%; align-items: center; justify-content: center; }
+    .gallery-placeholder .ui-icon { width: 30px; height: 30px; opacity: .6; }
+    .media-type-badge { position: absolute; bottom: 6px; right: 6px; padding: 3px 6px; border-radius: 5px; color: #fff; background: rgba(22, 37, 28, .72); font-size: 9px; }
+    .gallery-empty { grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 220px; padding: 36px 18px; text-align: center; }
+    .gallery-empty > .ui-icon, .gallery-empty .big-icon { display: flex; align-items: center; justify-content: center; width: 64px; height: 64px; padding: 18px; border-radius: 22px; background: #e6eee1; color: #76976e; margin-bottom: 18px; }
+    .gallery-empty .big-icon .ui-icon { width: 28px; height: 28px; }
+    .gallery-empty-title { color: #405841; font-size: 16px; font-weight: 600; }
+    .gallery-empty-hint { margin-top: 9px; color: var(--muted); font-size: 12px; line-height: 1.8; }
+    .gallery-more { grid-column: 1 / -1; justify-content: center; margin-top: 8px; }
 
-    /* 开关 */
-    .toggle {
-      width: 50px; height: 30px;
-      border-radius: 15px;
-      background: rgba(255,255,255,0.15);
-      position: relative;
-      transition: background 0.3s;
-      flex-shrink: 0;
-      cursor: pointer;
-    }
-    .toggle.on { background: #34c759; }
-    .toggle .knob {
-      width: 26px; height: 26px;
-      border-radius: 50%;
-      background: #fff;
-      position: absolute;
-      top: 2px; left: 2px;
-      transition: transform 0.3s cubic-bezier(0.32,0.72,0,1);
-      box-shadow: 0 1px 4px rgba(0,0,0,0.3);
-    }
-    .toggle.on .knob { transform: translateX(20px); }
-
-    /* 选择器 */
-    .option-group {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-    .option-btn {
-      padding: 6px 14px;
-      border-radius: 16px;
-      font-size: 13px;
-      font-weight: 500;
-      background: rgba(255,255,255,0.08);
-      color: rgba(255,255,255,0.7);
-      transition: all 0.2s;
-    }
-    .option-btn.active {
-      background: #007aff;
-      color: #fff;
-    }
-    .option-btn:active { transform: scale(0.94); }
-
-    /* 颜色选择 */
-    .color-options {
-      display: flex;
-      gap: 12px;
-    }
-    .color-dot {
-      width: 32px; height: 32px;
-      border-radius: 50%;
-      border: 2px solid transparent;
-      transition: all 0.2s;
-      cursor: pointer;
-    }
-    .color-dot.active { border-color: #fff; transform: scale(1.15); }
-
-    /* 自定义文本输入 */
-    #custom-text-input {
-      width: 100%;
-      background: rgba(255,255,255,0.08);
-      border-radius: 12px;
-      padding: 10px 14px;
-      font-size: 15px;
-      color: #fff;
-    }
-    #custom-text-input::placeholder { color: rgba(255,255,255,0.3); }
-    #manual-addr-input::placeholder { color: rgba(255,255,255,0.3); }
-    .setting-action-btn {
-      padding:7px 16px; border-radius:16px; font-size:13px; font-weight:600;
-      background:#007aff; color:#fff; transition:all 0.2s;
-    }
-    .setting-action-btn:active { transform:scale(0.94); opacity:0.8; }
-    .setting-hint { font-size:13px; color:rgba(255,255,255,0.4); line-height:1.4; word-break:break-all; }
-
-    /* ==================== 相册面板 ==================== */
-    #gallery-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 3px;
-    }
-    .gallery-item {
-      position: relative;
-      aspect-ratio: 1;
-      border-radius: 4px;
-      overflow: hidden;
-      background: #2a2a2a;
-    }
-    .gallery-item img, .gallery-item video {
-      width: 100%; height: 100%;
-      object-fit: cover;
-    }
-    .gallery-item .media-type-badge {
-      position: absolute;
-      top: 6px; right: 6px;
-      background: rgba(0,0,0,0.6);
-      backdrop-filter: blur(4px);
-      border-radius: 8px;
-      padding: 2px 6px;
-      font-size: 11px;
-      font-weight: 600;
-    }
-    .gallery-empty {
-      grid-column: 1 / -1;
-      text-align: center;
-      padding: 40px 20px;
-      color: rgba(255,255,255,0.3);
-      font-size: 15px;
-    }
-    .gallery-empty .big-icon { font-size: 48px; margin-bottom: 12px; }
-
-    /* ==================== 预览模态框 ==================== */
-    #preview-modal {
-      position: fixed;
-      top: 0; left: 0; right: 0; bottom: 0;
-      z-index: 60;
-      background: #000;
-      display: none;
-      flex-direction: column;
-    }
+    #preview-modal { color-scheme: light; position: fixed; inset: 0; z-index: 60; display: none; flex-direction: column; background: var(--paper); color: var(--ink); }
     #preview-modal.show { display: flex; }
-    #preview-modal .preview-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 54px 16px 12px;
-      z-index: 1;
-    }
-    #preview-modal .preview-close {
-      width: 40px; height: 40px;
-      border-radius: 50%;
-      background: rgba(255,255,255,0.15);
-      color: #fff;
-      font-size: 20px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    #preview-modal .preview-media {
-      flex: 1;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      overflow: hidden;
-      padding: 8px;
-    }
-    #preview-modal .preview-media img,
-    #preview-modal .preview-media video {
-      max-width: 100%;
-      max-height: 100%;
-      object-fit: contain;
-      border-radius: 8px;
-    }
-    #preview-modal .preview-actions {
-      display: flex;
-      gap: 16px;
-      justify-content: center;
-      padding: 20px 24px 48px;
-    }
-    .action-btn {
-      padding: 12px 28px;
-      border-radius: 24px;
-      font-size: 16px;
-      font-weight: 600;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-    .action-btn.primary { background: #007aff; color: #fff; }
-    .action-btn.secondary { background: rgba(255,255,255,0.1); color: #fff; }
+    .preview-header { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; gap: 12px; padding: calc(env(safe-area-inset-top, 0px) + 12px) 20px 12px; }
+    .preview-close { display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 50%; background: #e7ede3; color: var(--ink); }
+    .preview-heading { margin-right: auto; font-size: 16px; font-weight: 650; }
+    .preview-heading small { display: block; margin-top: 3px; color: var(--muted); font-size: 10px; font-weight: 400; }
+    .preview-header > .ui-icon { width: 19px; height: 19px; color: #7f9c7d; }
+    .preview-media { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; padding: 8px 20px; color: var(--muted); font-size: 14px; }
+    .preview-media img, .preview-media video { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 12px; }
+    .preview-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; flex-shrink: 0; padding: 18px 20px calc(env(safe-area-inset-bottom, 0px) + 20px); max-height: 48vh; overflow-y: auto; }
+    .action-btn { display: flex; align-items: center; justify-content: center; gap: 7px; min-height: 44px; min-width: 0; padding: 12px 10px; border-radius: 12px; font-size: 13px; font-weight: 600; }
+    .action-btn .ui-icon { width: 18px; height: 18px; }
+    .action-btn.primary { background: var(--accent); color: #fff; }
+    .action-btn.secondary { background: #e8eee4; color: #52654f; }
+    .action-btn.danger { color: #9b625a; background: #f2eae5; }
+    .preview-actions .primary { grid-column: 1 / -1; min-height: 48px; font-size: 15px; }
+    .preview-actions .secondary { flex-direction: column; gap: 6px; min-height: 58px; padding: 12px 4px; font-size: 11px; font-weight: 500; white-space: nowrap; }
+    .preview-save-hint { grid-column: 1 / -1; color: var(--muted); font-size: 11px; line-height: 1.65; text-align: center; }
+    .preview-actions .evidence-action { grid-column: 1 / -1; min-height: 36px; padding: 8px; background: #e8eee4; color: var(--accent); font-size: 12px; }
 
-    /* ==================== 状态提示 ==================== */
-    #toast {
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%) scale(0.95);
-      z-index: 100;
-      background: rgba(0,0,0,0.8);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      padding: 16px 28px;
-      border-radius: 14px;
-      font-size: 15px;
-      font-weight: 500;
-      text-align: center;
-      opacity: 0;
-      pointer-events: none;
-      transition: all 0.3s ease;
-      max-width: 80%;
-    }
-    #toast.show {
-      opacity: 1;
-      transform: translate(-50%, -50%) scale(1);
-    }
-
-    /* ==================== 滚动条 ==================== */
-    .panel::-webkit-scrollbar { width: 4px; }
-    .panel::-webkit-scrollbar-track { background: transparent; }
-    .panel::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 2px; }
-
-    /* ==================== 适配 ==================== */
-    @media (prefers-color-scheme: light) {
-      /* 保持深色主题，相机 App 就该是黑的 */
-    }
-    @supports (padding-top: env(safe-area-inset-top)) {
-      #top-bar { padding-top: calc(env(safe-area-inset-top) + 12px); }
-      #bottom-bar { padding-bottom: calc(env(safe-area-inset-bottom) + 16px); }
-      .panel { padding-bottom: calc(env(safe-area-inset-bottom) + 20px); }
-      #preview-modal .preview-header { padding-top: calc(env(safe-area-inset-top) + 12px); }
-      #preview-modal .preview-actions { padding-bottom: calc(env(safe-area-inset-bottom) + 24px); }
-    }
-
-    /* 相机启动遮挡 */
-    #loading-overlay {
-      position: absolute;
-      top: 0; left: 0; width: 100%; height: 100%;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      background: #000;
-      z-index: 5;
-      transition: opacity 0.5s ease;
-    }
+    #toast { position: fixed; bottom: calc(env(safe-area-inset-bottom, 0px) + 176px); left: 50%; transform: translate(-50%, 8px); z-index: 100; max-width: calc(100% - 40px); width: max-content; padding: 12px 18px; border: 1px solid #dbe5d6; border-radius: 14px; background: #f3f8ed; color: #38553c; font-size: 12px; line-height: 1.6; text-align: center; opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; }
+    #toast.show { opacity: 1; transform: translate(-50%, 0); }
+    #loading-overlay { position: absolute; inset: 0; z-index: 6; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 100px 32px 170px; background: var(--camera); opacity: 1; transition: opacity .2s; }
     #loading-overlay.hidden { opacity: 0; pointer-events: none; }
-    #loading-overlay .spinner {
-      width: 40px; height: 40px;
-      border: 3px solid rgba(255,255,255,0.1);
-      border-top-color: #007aff;
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-    }
+    .loading-camera { display: flex; align-items: center; justify-content: center; width: 72px; height: 72px; margin-bottom: 24px; border: 1px solid #405744; border-radius: 24px; background: #202c23; color: #a8c49c; }
+    .loading-camera .ui-icon { width: 32px; height: 32px; }
+    .spinner { width: 18px; height: 18px; margin-bottom: 14px; border: 2px solid #344739; border-top-color: #a8c49c; border-radius: 50%; animation: spin .9s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
-    #loading-overlay .loading-text {
-      margin-top: 16px;
-      font-size: 14px;
-      color: rgba(255,255,255,0.6);
+    .loading-text { color: #dce6d6; font-size: 14px; text-align: center; line-height: 1.7; }
+    .loading-caption { margin-top: 9px; color: #93a68f; font-size: 11px; text-align: center; line-height: 1.8; }
+    #camera-retry { margin-top: 22px; min-height: 44px; padding: 11px 22px; border-radius: 22px; background: var(--camera-accent); color: #29412c; font-size: 13px; font-weight: 600; }
+    #loading-overlay.error .spinner, #loading-overlay.hidden .spinner, #loading-overlay.error .loading-caption { display: none; animation: none; }
+    .panel::-webkit-scrollbar { width: 3px; }
+    .panel::-webkit-scrollbar-thumb { background: #c9d5c5; border-radius: 3px; }
+    @media (min-width: 600px) { .panel { max-width: 500px; margin: 0 auto; padding-left: 24px; padding-right: 24px; } }
+    @media (max-width: 350px) { #top-bar { padding-left: 16px; padding-right: 16px; } .brand-mark { display: none; } #bottom-bar { padding-left: 24px; padding-right: 24px; } .panel { padding-left: 16px; padding-right: 16px; } .setting-group { padding: 15px 13px; } .color-dot { width: 27px; height: 27px; } }
+    @media (orientation: landscape) {
+      #top-bar { right: calc(116px + env(safe-area-inset-right, 0px)); padding: 12px 16px 12px max(16px, env(safe-area-inset-left, 0px)); }
+      .camera-brand { gap: 0; }
+      .brand-title, .brand-mark { display: none; }
+      #camera-quality { font-size: 10px; }
+      #mode-bar { top: 12px; bottom: auto; left: calc((100% - 116px - env(safe-area-inset-right, 0px)) / 2); }
+      #bottom-bar { top: 0; left: auto; width: calc(116px + env(safe-area-inset-right, 0px)); padding: 40px max(16px, env(safe-area-inset-right, 0px)) 12px 16px; flex-direction: column; justify-content: center; gap: 14px; }
+      .bottom-btn { height: 48px; gap: 4px; }
+      .bottom-icon { height: 28px; }
+      #recording-timer { top: 8px; left: auto; right: calc(16px + env(safe-area-inset-right, 0px)); transform: none; width: 84px; height: auto; min-height: 36px; padding: 4px; flex-wrap: wrap; justify-content: center; gap: 2px 5px; }
+      #recording-audio-status { flex-basis: 100%; text-align: center; line-height: 11px; }
+      .panel { max-height: calc(100vh - 12px); max-height: calc(100dvh - 12px); }
+      .preview-header { padding-top: 8px; padding-bottom: 8px; }
+      .preview-media { padding: 6px 260px 16px 24px; }
+      .preview-actions { position: absolute; right: 0; top: 64px; bottom: 0; width: 240px; max-height: none; padding: 12px; align-content: center; }
+      #toast { bottom: 20px; }
     }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }
   </style>
 </head>
 <body>
 
+<svg class="icon-definitions" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <defs>
+    <symbol id="icon-camera" viewBox="0 0 24 24"><path d="M8 5l1.5-2h5L16 5h3a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"/><circle cx="12" cy="12" r="4"/></symbol>
+    <symbol id="icon-video" viewBox="0 0 24 24"><rect x="3" y="5" width="12" height="14" rx="3"/><path d="m15 9 6-3v12l-6-3"/></symbol>
+    <symbol id="icon-image" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m3 16 5-5 5 5 3-3 5 5"/></symbol>
+    <symbol id="icon-sliders" viewBox="0 0 24 24"><path d="M4 7h6m4 0h6M4 17h10m4 0h2"/><circle cx="12" cy="7" r="2"/><circle cx="16" cy="17" r="2"/></symbol>
+    <symbol id="icon-settings" viewBox="0 0 24 24"><path d="m9 3-.6 2-1.7 1-2-.4-2 3.4L4 10.5v2.9l-1.3 1.5 2 3.5 2-.5 1.7 1L9 21h4l.6-2.1 1.7-1 2 .5 2-3.5-1.3-1.5v-2.9l1.3-1.5-2-3.4-2 .4-1.7-1L13 3z" transform="translate(1 0)"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="icon-switch" viewBox="0 0 24 24"><path d="M20 8a8.5 8.5 0 0 0-14-3L3 8m0-5v5h5M4 16a8.5 8.5 0 0 0 14 3l3-3m0 5v-5h-5"/></symbol>
+    <symbol id="icon-close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
+    <symbol id="icon-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+    <symbol id="icon-download" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 15v5h16v-5"/></symbol>
+    <symbol id="icon-share" viewBox="0 0 24 24"><path d="M12 15V3m-4 4 4-4 4 4M7 11H4v10h16V11h-3"/></symbol>
+    <symbol id="icon-trash" viewBox="0 0 24 24"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7"/></symbol>
+    <symbol id="icon-location" viewBox="0 0 24 24"><path d="M19 10c0 6-7 11-7 11S5 16 5 10a7 7 0 1 1 14 0z"/><circle cx="12" cy="10" r="2.5"/></symbol>
+    <symbol id="icon-arrow-left" viewBox="0 0 24 24"><path d="m10 5-7 7 7 7M3 12h18"/></symbol>
+    <symbol id="icon-leaf" viewBox="0 0 24 24"><path d="M20 3C10 2 3 7 4 14c1 8 16 8 16-11zM4 21l11-12"/></symbol>
+    <symbol id="icon-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></symbol>
+  </defs>
+</svg>
+
 <div id="app">
   <!-- 加载中 -->
   <div id="loading-overlay">
+    <div class="loading-camera"><svg class="ui-icon" aria-hidden="true"><use href="#icon-camera"/></svg></div>
     <div class="spinner"></div>
     <div class="loading-text">正在启动相机...</div>
+    <p class="loading-caption">让时间与地点，陪每一张照片留下。</p>
+    <button id="camera-retry" hidden>重试打开相机</button>
   </div>
 
   <!-- 相机预览 -->
@@ -587,6 +231,7 @@
 
   <!-- 水印实时预览 -->
   <div id="watermark-overlay">
+    <canvas id="watermark-preview" width="0" height="0" aria-hidden="true"></canvas>
     <div class="watermark-corner wm-corner-tl" id="wm-tl">
       <span class="wm-line" id="wm-time-tl"></span>
       <span class="wm-line" id="wm-date-tl"></span>
@@ -615,85 +260,116 @@
 
   <!-- 顶部栏 -->
   <div id="top-bar">
-    <button class="top-btn" id="btn-settings" aria-label="设置">⚙️</button>
-    <span class="title">简单水印相机</span>
-    <button class="top-btn" id="btn-switch-camera" aria-label="切换摄像头">🔄</button>
+    <div class="camera-brand">
+      <span class="brand-mark"><svg class="ui-icon" aria-hidden="true"><use href="#icon-camera"/></svg></span>
+      <div><div class="brand-title">车况留证</div><div id="camera-quality">720P · 省电</div><button id="location-summary" aria-label="刷新定位状态">正在定位</button></div>
+    </div>
+    <button class="top-btn" id="btn-settings" aria-label="设置"><svg class="ui-icon" aria-hidden="true"><use href="#icon-sliders"/></svg></button>
+    <button class="top-btn" id="btn-switch-camera" aria-label="切换摄像头"><svg class="ui-icon" aria-hidden="true"><use href="#icon-switch"/></svg></button>
   </div>
 
   <!-- 模式切换 -->
   <div id="mode-bar">
-    <button class="mode-btn active" data-mode="photo">📷 拍照</button>
-    <button class="mode-btn" data-mode="video">🎬 录像</button>
+    <button class="mode-btn" data-mode="photo" aria-label="拍照模式"><svg class="ui-icon" aria-hidden="true"><use href="#icon-camera"/></svg>拍照</button>
+    <button class="mode-btn active" data-mode="video" aria-label="录像模式"><svg class="ui-icon" aria-hidden="true"><use href="#icon-video"/></svg>录像</button>
   </div>
 
   <!-- 录像计时器 -->
   <div id="recording-timer">
     <span class="dot"></span>
     <span id="timer-display">00:00</span>
+    <span id="recording-audio-status"></span>
   </div>
 
   <!-- 底部控制 -->
   <div id="bottom-bar">
-    <button class="bottom-btn" id="btn-gallery" aria-label="相册">🖼️</button>
-    <button id="shutter-btn">
+    <button class="bottom-btn" id="btn-gallery" aria-label="相册"><span class="bottom-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-image"/></svg></span><span>相册</span></button>
+    <button id="shutter-btn" class="video-mode" aria-label="开始录像">
       <div class="inner"></div>
     </button>
-    <button class="bottom-btn" id="btn-watermark-settings" aria-label="水印">🏷️</button>
+    <button class="bottom-btn" id="btn-watermark-settings" aria-label="水印"><span class="bottom-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-sliders"/></svg></span><span>水印</span></button>
   </div>
 
   <!-- Toast -->
-  <div id="toast"></div>
+  <div id="toast" role="status" aria-live="polite"></div>
 
   <!-- ==================== 水印设置面板 ==================== -->
   <div class="panel-overlay" id="watermark-panel-overlay"></div>
-  <div class="panel" id="watermark-panel">
-    <div class="panel-handle"></div>
-    <div class="panel-title">🏷️ 水印设置</div>
+  <div class="panel" id="watermark-panel" role="dialog" aria-modal="true" aria-label="水印设置">
+    <div class="sheet-header">
+      <div class="panel-handle"></div>
+      <button type="button" class="panel-close" data-close-panel="watermark-panel" aria-label="完成水印设置">完成</button>
+      <div class="panel-title">车况留证设置</div>
+      <p class="panel-subtitle">先拍全貌，再拍已有损伤；每段最长 3 分钟</p>
+    </div>
 
     <div class="setting-group">
-      <div class="setting-group-title">显示内容</div>
+      <div class="setting-group-title">本次车况记录</div>
+      <div class="option-group" id="inspection-options">
+        <button class="option-btn active" data-stage="before" aria-pressed="true">接车前</button>
+        <button class="option-btn" data-stage="after" aria-pressed="false">交车后</button>
+      </div>
+      <div class="setting-row field-row"><label class="setting-label" for="vehicle-label">车辆标记／车牌（选填）</label><input id="vehicle-label" type="text" maxlength="16" placeholder="用于对应本次车辆" autocomplete="off"></div>
+      <div class="setting-row field-row"><label class="setting-label" for="order-label">订单尾号（选填）</label><input id="order-label" type="text" maxlength="12" placeholder="用于对应本次订单" autocomplete="off"></div>
+      <button id="new-inspection" class="setting-action-btn">新一单：清空标记</button>
+      <p class="setting-hint quality-hint">绕车连续拍摄：车牌 → 车身四角 → 轮毂 → 已有划痕和凹陷。损伤先拍位置关系，再拍细节；检查光线与录音。</p>
+      <p class="setting-hint quality-hint">车辆与订单标记为手动填写。本页刷新后会清空，避免误带入下一单。</p>
+    </div>
+    <div class="setting-group provenance-note">
+      <div class="setting-group-title">记录与存证</div>
+      <p class="setting-hint">时间来自设备，位置来自浏览器；本机水印未经过滴滴或第三方认证。校验记录只能核对文件是否一致，不能证明拍摄信息真实。</p>
+      <a href="./verify.html" target="_blank" rel="noopener">核对视频与校验记录 ↗</a>
+    </div>
+
+    <div class="setting-group">
+      <div class="setting-group-title"><svg class="ui-icon" aria-hidden="true"><use href="#icon-camera"/></svg>拍摄画质</div>
+      <div class="option-group" id="quality-options">
+        <button class="option-btn active" data-quality="eco" aria-pressed="true"><span class="quality-name">省电 <small>720p</small></span><span class="quality-detail">日常记录，轻盈省心</span></button>
+        <button class="option-btn" data-quality="hd" aria-pressed="false"><span class="quality-name">清晰 <small>1080p</small></span><span class="quality-detail">保留更多画面细节</span></button>
+      </div>
+      <p class="setting-hint quality-hint">默认使用省电画质。清晰模式更耗电，实际分辨率取决于设备。</p>
+    </div>
+
+    <div class="setting-group">
+      <div class="setting-group-title"><svg class="ui-icon" aria-hidden="true"><use href="#icon-sliders"/></svg>显示内容</div>
       <div class="setting-row">
         <span class="setting-label">显示时间</span>
-        <div class="toggle on" id="toggle-time"><div class="knob"></div></div>
+        <button type="button" class="toggle on" id="toggle-time" aria-label="显示时间" aria-pressed="true"><span class="knob"></span></button>
       </div>
       <div class="setting-row">
         <span class="setting-label">显示日期</span>
-        <div class="toggle on" id="toggle-date"><div class="knob"></div></div>
+        <button type="button" class="toggle on" id="toggle-date" aria-label="显示日期" aria-pressed="true"><span class="knob"></span></button>
       </div>
       <div class="setting-row">
         <span class="setting-label">显示地点</span>
-        <div class="toggle on" id="toggle-location"><div class="knob"></div></div>
+        <button type="button" class="toggle on" id="toggle-location" aria-label="显示地点" aria-pressed="true"><span class="knob"></span></button>
       </div>
       <div class="setting-row">
         <span class="setting-label">自定义文字</span>
-        <div class="toggle" id="toggle-custom"><div class="knob"></div></div>
+        <button type="button" class="toggle" id="toggle-custom" aria-label="自定义文字" aria-pressed="false"><span class="knob"></span></button>
       </div>
-      <div class="setting-row">
-        <div style="flex:1">
-          <span class="setting-label">自定义内容</span>
-        </div>
-        <input id="custom-text-input" type="text" placeholder="输入自定义文字..." maxlength="40" style="width:auto;flex:1;margin-left:12px;">
+      <div class="setting-row field-row">
+        <label class="setting-label" for="custom-text-input">自定义内容</label>
+        <input id="custom-text-input" type="text" aria-label="自定义内容" placeholder="写一句话，留在照片上" maxlength="40">
       </div>
     </div>
 
     <div class="setting-group">
-      <div class="setting-group-title">位置设置</div>
+      <div class="setting-group-title"><svg class="ui-icon" aria-hidden="true"><use href="#icon-location"/></svg>位置设置</div>
       <div class="setting-row">
         <span class="setting-label">手动输入地址</span>
-        <div class="toggle" id="toggle-manual-addr"><div class="knob"></div></div>
+        <button type="button" class="toggle" id="toggle-manual-addr" aria-label="手动输入地址" aria-pressed="false"><span class="knob"></span></button>
       </div>
-      <div class="setting-row">
-        <div style="flex:1">
-          <span class="setting-label">地址内容</span>
-        </div>
-        <input id="manual-addr-input" type="text" placeholder="例如：北京市朝阳区..." maxlength="60" style="width:auto;flex:1;margin-left:12px;background:rgba(255,255,255,0.08);border-radius:12px;padding:10px 14px;font-size:15px;color:#fff;">
+      <div class="setting-row field-row">
+        <label class="setting-label" for="manual-addr-input">地址内容</label>
+        <input id="manual-addr-input" type="text" aria-label="地址内容" placeholder="例如：杭州 · 西湖" maxlength="60">
       </div>
       <div class="setting-row">
         <span class="setting-label">自动定位</span>
         <button class="setting-action-btn" id="btn-refresh-location">刷新定位</button>
       </div>
       <div class="setting-row" style="border-bottom:none;flex-wrap:wrap;">
-        <span class="setting-hint" id="location-status-hint">获取位置中... 如果一直显示坐标数字，请开启下方"手动输入地址"</span>
+        <span class="setting-hint" id="location-status-hint">正在获取定位；会显示估计误差和位置更新时间。</span>
       </div>
     </div>
 
@@ -701,7 +377,7 @@
       <div class="setting-group-title">附近地点</div>
       <div class="setting-row">
         <span class="setting-label">使用最近地点</span>
-        <div class="toggle" id="toggle-poi"><div class="knob"></div></div>
+        <button type="button" class="toggle" id="toggle-poi" aria-label="使用最近地点" aria-pressed="false"><span class="knob"></span></button>
       </div>
       <div class="setting-row" style="border-bottom:none;flex-direction:column;align-items:stretch;gap:6px;">
         <div id="poi-list" style="max-height:160px;overflow-y:auto;display:flex;flex-direction:column;gap:4px;"></div>
@@ -721,12 +397,12 @@
     <div class="setting-group">
       <div class="setting-group-title">文字颜色</div>
       <div class="color-options" id="color-options">
-        <div class="color-dot active" data-color="white" style="background:#fff;box-shadow:0 0 0 1px rgba(255,255,255,0.2)"></div>
-        <div class="color-dot" data-color="yellow" style="background:#ffd700"></div>
-        <div class="color-dot" data-color="red" style="background:#ff3b30"></div>
-        <div class="color-dot" data-color="blue" style="background:#5ac8fa"></div>
-        <div class="color-dot" data-color="green" style="background:#34c759"></div>
-        <div class="color-dot" data-color="orange" style="background:#ff9500"></div>
+        <button type="button" class="color-dot active" data-color="white" aria-label="白色" aria-pressed="true" style="background:#fff;box-shadow:0 0 0 1px rgba(255,255,255,0.2)"></button>
+        <button type="button" class="color-dot" data-color="yellow" aria-label="黄色" aria-pressed="false" style="background:#ffd700"></button>
+        <button type="button" class="color-dot" data-color="red" aria-label="红色" aria-pressed="false" style="background:#ff3b30"></button>
+        <button type="button" class="color-dot" data-color="blue" aria-label="蓝色" aria-pressed="false" style="background:#5ac8fa"></button>
+        <button type="button" class="color-dot" data-color="green" aria-label="绿色" aria-pressed="false" style="background:#34c759"></button>
+        <button type="button" class="color-dot" data-color="orange" aria-label="橙色" aria-pressed="false" style="background:#ff9500"></button>
       </div>
     </div>
 
@@ -743,29 +419,38 @@
 
   <!-- ==================== 相册面板 ==================== -->
   <div class="panel-overlay" id="gallery-panel-overlay"></div>
-  <div class="panel" id="gallery-panel">
-    <div class="panel-handle"></div>
-    <div class="panel-title">🖼️ 我的相册</div>
+  <div class="panel" id="gallery-panel" role="dialog" aria-modal="true" aria-label="我的相册">
+    <div class="sheet-header">
+      <div class="panel-handle"></div>
+      <button type="button" class="panel-close" data-close-panel="gallery-panel" aria-label="关闭相册">完成</button>
+      <div class="panel-title">我的相册</div>
+      <p class="panel-subtitle">每一张，都是生活的注脚</p>
+    </div>
+    <p id="gallery-status">作品保存在本机，请将重要作品另存到系统相册。</p>
     <div id="gallery-grid">
       <div class="gallery-empty">
-        <div class="big-icon">📸</div>
-        <div>还没有拍摄内容<br>去拍一张吧！</div>
+        <div class="big-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-image"/></svg></div>
+        <div class="gallery-empty-title">等一张值得留下的照片</div>
+        <p class="gallery-empty-hint">拍下第一张，你的记录会出现在这里</p>
       </div>
     </div>
   </div>
 
   <!-- ==================== 预览模态框 ==================== -->
-  <div id="preview-modal">
+  <div id="preview-modal" role="dialog" aria-modal="true" aria-label="作品预览">
     <div class="preview-header">
-      <button class="preview-close" id="preview-close">✕</button>
-      <span style="font-weight:600;font-size:16px;">预览</span>
-      <div style="width:40px"></div>
+      <button class="preview-close" id="preview-close" aria-label="关闭预览"><svg class="ui-icon" aria-hidden="true"><use href="#icon-arrow-left"/></svg></button>
+      <div class="preview-heading">作品预览<small>留住这一刻</small></div>
+      <svg class="ui-icon" aria-hidden="true"><use href="#icon-image"/></svg>
     </div>
     <div class="preview-media" id="preview-media-container"></div>
     <div class="preview-actions" id="preview-actions"></div>
   </div>
 </div>
 
+<script src="./media-store.js"></script>
+<script src="./location-service.js"></script>
+<script src="./evidence.js"></script>
 <script>
 // ============================================================
 //  简单水印相机 - 完整 JavaScript
@@ -776,6 +461,7 @@
 
   // ==================== DOM 引用 ====================
   const $ = id => document.getElementById(id);
+  const uiIcon = name => `<svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-${name}"></use></svg>`;
   const video       = $('camera-preview');
   const shutterBtn  = $('shutter-btn');
   const modeBtns    = document.querySelectorAll('.mode-btn');
@@ -784,12 +470,11 @@
   const timerDisplay= $('timer-display');
 
   // ==================== 状态 ====================
-  let currentMode = 'photo'; // 'photo' | 'video'
+  let currentMode = 'video'; // 车况留证默认录像。
   let isRecording = false;
   let useFrontCamera = false;
   let stream = null;
   let mediaRecorder = null;
-  let recordedChunks = [];
   let recordingCanvas = null;
   let recordingCtx = null;
   let animFrameId = null;
@@ -799,6 +484,34 @@
   let currentLocation = null;
   let locationAddress = '';
   let locationError = false;
+  const CAMERA_FPS = 24;
+  const CAMERA_PROFILES = {
+    eco: { width: 1280, height: 720, bitrate: 2500000 },
+    hd: { width: 1920, height: 1080, bitrate: 5000000 },
+  };
+  let cameraGeneration = 0;
+  let cameraStarting = false;
+  let cameraDeadline = null;
+  let isCapturing = false;
+  let recordingStarting = false;
+  let recordingFinishing = false;
+  let recordingAttempt = 0;
+  let recordingSession = null;
+  let cameraMuteTimer = null;
+  const MAX_RECORDING_MS = 3 * 60 * 1000;
+  let microphoneStream = null;
+  let videoFrameId = null;
+  let watermarkCanvas = null;
+  let watermarkRevision = 0;
+  let lastWatermarkState = '';
+  let lastPreviewKey = '';
+  let locationPending = false;
+  let locationGeneration = 0;
+  let locationNeedsResume = false;
+  let lastLocationAttemptAt = -Infinity;
+  let activeCaptureContext = null;
+  const inspection = { stage: 'before', vehicle: '', order: '' };
+  let evidenceExportController = null;
 
   // 水印状态
   let nearByPois = [];      // 附近地点列表
@@ -816,10 +529,34 @@
     position: 'tl',
     color: 'white',
     size: 'sm',
+    quality: 'eco',
   };
+  const preferencesKey = `watermark-camera-settings:${new URL('./', location.href).pathname}`;
+  let lastPreferences = '';
+  try {
+    const saved = JSON.parse(localStorage.getItem(preferencesKey) || '{}');
+    for (const key of ['showTime', 'showDate', 'showLocation', 'showCustom', 'useManualAddr']) {
+      if (typeof saved?.[key] === 'boolean') wmState[key] = saved[key];
+    }
+    if (typeof saved?.customText === 'string') wmState.customText = saved.customText.slice(0, 40);
+    if (typeof saved?.manualAddr === 'string') wmState.manualAddr = saved.manualAddr.slice(0, 60);
+    if (['tl','tr','bl','br'].includes(saved?.position)) wmState.position = saved.position;
+    if (['white','yellow','red','blue','green','orange'].includes(saved?.color)) wmState.color = saved.color;
+    if (['sm','md','lg','xl'].includes(saved?.size)) wmState.size = saved.size;
+    if (['eco','hd'].includes(saved?.quality)) wmState.quality = saved.quality;
+  } catch (error) { /* 存储不可用时仍使用默认设置拍摄。 */ }
 
   // 相册
   let galleryItems = [];
+  const pendingMedia = new Map();
+  let galleryLoadGeneration = 0;
+  let galleryCursor = null;
+  let galleryLoading = false;
+  let galleryRetry = null;
+  let galleryURLs = [];
+  let previewGeneration = 0;
+  let previewURL = null;
+  let sharing = false;
 
   // ==================== 水印渲染函数 ====================
   function formatTime() {
@@ -839,6 +576,19 @@
   }
 
   function updateWatermarkOverlay() {
+    const qualityLabel = $('camera-quality');
+    const qualityText = `${wmState.quality === 'hd' ? '1080P · 清晰' : '720P · 省电'} · ${inspection.stage === 'after' ? '交车后' : '接车前'}`;
+    if (qualityLabel && qualityLabel.textContent !== qualityText) qualityLabel.textContent = qualityText;
+    const watermarkState = JSON.stringify({ ...wmState, inspection, selectedPoi, locationText: locationWatermarkText(), locationError, clockShift: activeCaptureContext?.clockShiftDetected });
+    if (watermarkState !== lastWatermarkState) {
+      lastWatermarkState = watermarkState;
+      watermarkRevision++;
+    }
+    const preferences = JSON.stringify({ ...wmState, usePoi: false });
+    if (preferences !== lastPreferences) {
+      lastPreferences = preferences;
+      try { localStorage.setItem(preferencesKey, preferences); } catch (error) { /* 设置仅在本次使用。 */ }
+    }
     // 决定显示哪个角落
     const corners = ['tl','tr','bl','br'];
     corners.forEach(pos => {
@@ -852,23 +602,13 @@
       const el = $(`${id}-${p}`);
       if (el) {
         el.textContent = val;
-        el.style.display = val ? 'block' : 'none';
+        el.style.display = val ? '-webkit-box' : 'none';
       }
     };
 
-    setEl('wm-time', wmState.showTime ? formatTime() : '');
+    setEl('wm-time', wmState.showTime ? `${formatTime()}（设备时间）` : '');
     setEl('wm-date', wmState.showDate ? formatDate() : '');
-    let locText = '定位中...';
-    if (wmState.useManualAddr) {
-      locText = wmState.manualAddr;
-    } else if (wmState.usePoi && selectedPoi) {
-      locText = selectedPoi;
-    } else if (locationAddress) {
-      locText = locationAddress;
-    } else if (locationError) {
-      locText = '定位失败';
-    }
-    setEl('wm-location', wmState.showLocation ? locText : '');
+    setEl('wm-location', wmState.showLocation ? locationWatermarkText() : '');
     setEl('wm-custom', wmState.showCustom && wmState.customText ? wmState.customText : '');
 
     // 颜色 / 大小
@@ -880,13 +620,14 @@
     overlay.classList.add(`wm-size-${wmState.size}`);
 
     updateLocationHint();
+    renderWatermarkPreview();
   }
-
-  // 高德地图 API Key（用户申请的）
-  const AMAP_KEY = 'b6045d9bbac9de8d8642a71580218562';
 
   // WGS-84 (GPS) 转 GCJ-02 (高德/中国地图)
   function wgs84ToGcj02(wgsLat, wgsLng) {
+    if (wgsLng < 72.004 || wgsLng > 137.8347 || wgsLat < 0.8293 || wgsLat > 55.8271) {
+      return { lat: wgsLat, lng: wgsLng };
+    }
     const a = 6378245.0, ee = 0.00669342162296594323;
     function transformLat(x, y) {
       let ret = -100 + 2*x + 3*y + 0.2*y*y + 0.1*x*y + 0.2*Math.sqrt(Math.abs(x));
@@ -911,181 +652,158 @@
     dlng = (dlng*180)/(a/sq*Math.cos(rad)*Math.PI);
     return { lat: wgsLat+dlat, lng: wgsLng+dlng };
   }
-  // ==================== 位置获取（改进版） ====================
-  function startLocation() {
-    if (!navigator.geolocation) {
-      showToast('⚠️ 浏览器不支持定位');
-      locationError = true;
-      updateWatermarkOverlay();
-      return;
+  // ==================== 位置获取：短时高精度采样，地址仅作估算 ====================
+  let locationController = null;
+  const locationService = LocationService.create({ onUpdate: snapshot => {
+    locationPending = snapshot.pending;
+    locationError = snapshot.status === 'error';
+    const changed = currentLocation?.timestamp !== snapshot.timestamp || currentLocation?.lat !== snapshot.lat || currentLocation?.lng !== snapshot.lng;
+    currentLocation = snapshot.lat === null ? null : { ...snapshot };
+    if (!currentLocation) {
+      locationAddress = snapshot.error?.code === 'permission-denied' ? '定位被拒绝' : snapshot.pending ? '定位中' : '定位暂不可用';
+      window._geoSource = '';
+    } else if (changed) {
+      locationAddress = `${snapshot.lat.toFixed(6)}, ${snapshot.lng.toFixed(6)}`;
+      window._geoSource = '';
     }
-    locationAddress = '';
-    locationError = false;
+    if (activeCaptureContext && ['ready', 'error'].includes(snapshot.status)) {
+      const samples = activeCaptureContext.locationSamples;
+      if (samples.length < 64) samples.push({ elapsedMs: Math.round(performance.now() - activeCaptureContext.monotonicStart), ...captureLocationSnapshot() });
+    }
     updateWatermarkOverlay();
+  } });
 
-    // 用 watchPosition 持续获取（比 getCurrentPosition 更稳定）
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        currentLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-        // 先显示坐标（快速），更友好的格式
-        locationAddress = `📍 ${currentLocation.lat.toFixed(4)}, ${currentLocation.lng.toFixed(4)}`;
-        updateWatermarkOverlay();
-
-        // 尝试逆地理编码获取地址（多个服务，谁先返回用谁）
-        const geoPromises = [];
-
-        // 同时尝试多个逆地理编码服务
-        function strAddress(data, fallback) {
-          if (!data) return null;
-          const ad = data.address || data;
-          const parts = [];
-          if (ad.city || ad.town || ad.county || ad.state_district) parts.push(ad.city || ad.town || ad.county || ad.state_district);
-          if (ad.district || ad.suburb || ad.borough) parts.push(ad.district || ad.suburb || ad.borough);
-          if (ad.road || ad.street || ad.village) parts.push(ad.road || ad.street || ad.village);
-          if (ad.name && !parts.includes(ad.name) && ad.name.length > 2) parts.push(ad.name);
-          return parts.length ? parts.join(' ') : fallback || null;
+  function startLocation(precise = true) {
+    if (locationPending) return;
+    if (document.hidden) { locationNeedsResume = true; return; }
+    locationNeedsResume = false;
+    lastLocationAttemptAt = performance.now();
+    const generation = ++locationGeneration;
+    locationController?.abort();
+    locationController = null;
+    nearByPois = [];
+    selectedPoi = '';
+    wmState.usePoi = false;
+    $('toggle-poi').classList.remove('on');
+    renderPoiList();
+    // The address request follows acquisition; neither GPS nor a map API blocks camera startup.
+    locationService.start({ precise }).then(async snapshot => {
+      if (generation !== locationGeneration || document.hidden || snapshot.lat === null || snapshot.stale) return;
+      if (!navigator.onLine) return;
+      const controller = new AbortController();
+      locationController = controller;
+      const timeout = setTimeout(() => controller.abort(), 5000);
+      try {
+        const gcj = wgs84ToGcj02(snapshot.lat, snapshot.lng);
+        const url = new URL('./api/reverse-geocode', location.href);
+        url.searchParams.set('longitude', String(gcj.lng));
+        url.searchParams.set('latitude', String(gcj.lat));
+        const response = await fetch(url, { signal: controller.signal, cache: 'no-store' });
+        const data = response.ok ? await response.json() : null;
+        if (generation !== locationGeneration) return;
+        if (data?.status === '1' && data.regeocode) {
+          const rg = data.regeocode;
+          const ac = rg.addressComponent || {};
+          const text = value => typeof value === 'string' ? value : '';
+          const parts = [text(ac.city), text(ac.district), text(ac.township), text(ac.streetNumber?.street) + text(ac.streetNumber?.number)];
+          const address = text(rg.formatted_address) || parts.filter(Boolean).join(' ');
+          if (address) { locationAddress = address.slice(0, 120); window._geoSource = '地图估算'; }
+          nearByPois = (Array.isArray(rg.pois) ? rg.pois : Array.isArray(rg.aois) ? rg.aois : []).slice(0, 20)
+            .map(p => ({ name: text(p.name), dist: p.distance, addr: p.address, type: p.type }));
         }
-
-        // 服务1: 高德地图（先转换坐标再查询）
-        const gcj = wgs84ToGcj02(currentLocation.lat, currentLocation.lng);
-        window._lastGpsCoord = `GPS:${currentLocation.lat.toFixed(4)},${currentLocation.lng.toFixed(4)} → GCJ:${gcj.lat.toFixed(4)},${gcj.lng.toFixed(4)}`;
-        geoPromises.push(
-          fetch(`https://restapi.amap.com/v3/geocode/regeo?output=JSON&location=${gcj.lng},${gcj.lat}&key=${AMAP_KEY}&radius=500&extensions=all`,
-            { signal: AbortSignal.timeout(8000) })
-            .then(r => r.ok ? r.json() : null)
-            .then(d => {
-              if (d?.status === '1' && d.regeocode) {
-                window._geoSource = '高德';
-                const rg = d.regeocode;
-                const ac = rg.addressComponent;
-                const parts = [];
-                if (ac.city) parts.push(ac.city.replace(/市$/, ''));
-                if (ac.district) parts.push(ac.district);
-                if (ac.township) parts.push(ac.township);
-                if (ac.streetNumber?.street) {
-                  let s = ac.streetNumber.street;
-                  if (ac.streetNumber.number) s += ac.streetNumber.number;
-                  if (s.length > 20) s = s.substring(0, 20);
-                  parts.push(s);
-                }
-                let nearestPoi = '';
-                if (ac.building?.name && ac.building.name.length > 1) {
-                  nearestPoi = ac.building.name;
-                } else if (rg.pois && rg.pois.length > 0) {
-                  nearestPoi = rg.pois[0].name;
-                }
-                if (nearestPoi && nearestPoi.length < 15) parts.push(nearestPoi);
-                if (rg.pois && rg.pois.length > 0) {
-                  nearByPois = rg.pois.map(p => ({ name: p.name, dist: p.distance, addr: p.address, type: p.type }));
-                } else if (rg.aois && rg.aois.length > 0) {
-                  nearByPois = rg.aois.map(a => ({ name: a.name, dist: a.distance, addr: a.address, type: a.type }));
-                } else { nearByPois = []; }
-                const addr = parts.filter(Boolean).join(' ');
-                return addr.length > 30 ? addr.substring(0, 28) + '..' : addr;
-              }
-              return null;
-            })
-            .catch(() => null)
-        );
-
-        // 服务2: Nominatim (OpenStreetMap)
-        geoPromises.push(
-          fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${currentLocation.lat}&lon=${currentLocation.lng}&accept-language=zh&zoom=18`,
-            { headers: { 'User-Agent': 'WatermarkCamera/1.0' }, signal: AbortSignal.timeout(5000) })
-            .then(r => r.ok ? r.json() : null)
-            .then(d => strAddress(d, d?.display_name?.split(',')[0]))
-            .catch(() => null)
-        );
-
-        // 服务3: ip-api.com（HTTPS）
-        geoPromises.push(
-          fetch(`https://ip-api.com/json/${currentLocation.lat},${currentLocation.lng}?lang=zh-CN&fields=status,regionName,city,district,zip`,
-            { signal: AbortSignal.timeout(5000) })
-            .then(r => r.ok ? r.json() : null)
-            .then(d => d?.status === 'success' ? strAddress({ city: d.city, district: d.district, state_district: d.regionName }) : null)
-            .catch(() => null)
-        );
-
-        // 服务4: bigdatacloud
-        geoPromises.push(
-          fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${currentLocation.lat}&longitude=${currentLocation.lng}&localityLanguage=zh`,
-            { signal: AbortSignal.timeout(5000) })
-            .then(r => r.ok ? r.json() : null)
-            .then(d => d ? strAddress({ city: d.locality || d.city, district: d.principalSubdivision }) : null)
-            .catch(() => null)
-        );
-
-        // 服务5: geocode.maps.co
-        geoPromises.push(
-          fetch(`https://geocode.maps.co/reverse?lat=${currentLocation.lat}&lon=${currentLocation.lng}`,
-            { signal: AbortSignal.timeout(5000) })
-            .then(r => r.ok ? r.json() : null)
-            .then(d => d?.address ? strAddress(d.address) : null)
-            .catch(() => null)
-        );
-
-        // 谁先返回有效地址就用谁
-        try {
-          const results = await Promise.allSettled(geoPromises);
-          for (const r of results) {
-            if (r.status === 'fulfilled' && r.value && r.value.length > 2) {
-              locationAddress = r.value;
-              break;
-            }
-          }
-        } catch (e) { /* 保持坐标显示 */ }
-
-        locationError = false;
-        updateWatermarkOverlay();
-        updateLocationHint();
-        renderPoiList();
-      },
-      (err) => {
-        console.warn('定位失败:', err.message);
-        if (err.code === 1) {
-          locationAddress = '定位被拒绝';
-          showToast('请在 Safari 设置中允许定位权限');
-        } else if (err.code === 2) {
-          locationAddress = 'GPS信号弱';
-        } else if (err.code === 3) {
-          locationAddress = '定位超时';
-          setTimeout(startLocation, 3000);
-          return;
+      } catch (_) { /* 坐标已可用；地址服务失败不阻断录像。 */ }
+      finally {
+        clearTimeout(timeout);
+        if (generation === locationGeneration) {
+          locationController = null;
+          renderPoiList();
+          updateWatermarkOverlay();
         }
-        showToast('自动定位失败，可开「手动输入地址」填写位置');
-        locationError = true;
-        updateWatermarkOverlay();
-        updateLocationHint();
-      },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 120000 }
-    );
+      }
+    });
   }
 
-  // 手动刷新位置（给用户一个重新定位的按钮）
   function refreshLocation() {
-    showToast('正在重新定位...');
-    startLocation();
+    if (locationPending) { showToast('正在提高定位精度，请稍候'); return; }
+    showToast('正在重新定位，请尽量在开阔处等待');
+    startLocation(true);
+  }
+
+  function positionDescription() {
+    const fix = locationService.getSnapshot();
+    if (fix.lat === null) return fix.pending ? '定位中' : fix.error?.code === 'permission-denied' ? '定位被拒绝' : '定位暂不可用';
+    const accuracy = fix.accuracy === null ? '精度未知' : `估计误差±${Math.ceil(fix.accuracy)}m`;
+    return `WGS84 ${fix.lat.toFixed(6)}, ${fix.lng.toFixed(6)} · ${accuracy}${fix.stale ? ' · 已过期' : ''}`;
+  }
+
+  function locationWatermarkText() {
+    let label = '';
+    if (wmState.useManualAddr) label = `手填地址（未核验）：${wmState.manualAddr || '未填写'}`;
+    else if (wmState.usePoi && selectedPoi) label = `选定地点（未核验）：${selectedPoi}`;
+    else if (window._geoSource) label = `地图估算：${locationAddress}`;
+    return [label, positionDescription()].filter(Boolean).join('\n');
   }
 
   function updateLocationHint() {
-    const hint = $('location-status-hint');
-    if (!hint) return;
-    let text = '';
-    if (wmState.useManualAddr) {
-      text = '✓ 手动: ' + (wmState.manualAddr || '未填');
-    } else if (wmState.usePoi && selectedPoi) {
-      text = '✓ ' + selectedPoi;
-    } else if (locationAddress) {
-      text = locationAddress;
-      if (window._geoSource) text += ' [' + window._geoSource + ']';
-      if (window._lastGpsCoord) text += ' ' + window._lastGpsCoord.replace('GPS:', '').substring(0, 25);
-    } else if (locationError) {
-      text = '定位失败，请开启「手动输入地址」';
-    } else {
-      text = '获取GPS中...';
-    }
-    hint.textContent = text;
+    const fix = locationService.getSnapshot();
+    const age = fix.timestamp === null ? '' : ` · 采样于 ${new Date(fix.timestamp).toLocaleTimeString('zh-CN', { hour12: false })}（${Math.floor(fix.ageMs / 1000)}秒前）`;
+    $('location-status-hint').textContent = locationWatermarkText() + age;
+    const summary = $('location-summary');
+    const label = fix.lat === null ? positionDescription() : fix.stale ? '位置已过期 · 点此更新' :
+      fix.accuracy === null ? '定位精度未知 · 点此更新' : `定位估计±${Math.ceil(fix.accuracy)}m${fix.pending ? ' · 优化中' : ''}`;
+    if (summary.textContent !== label) summary.textContent = label;
+    summary.setAttribute('aria-label', `${label}，点击刷新定位`);
+    summary.dataset.precise = String(fix.lat !== null && !fix.stale && fix.accuracy !== null && fix.accuracy <= 30);
   }
+
+  // 本机采集记录只描述设备报告的信息，不提供来源认证。
+  function captureLocationSnapshot() {
+    return { ...locationService.getSnapshot(), address: locationAddress || null,
+      addressSource: window._geoSource ? 'map-estimate' : null,
+      manualAddress: wmState.useManualAddr ? wmState.manualAddr : null,
+      selectedPlace: wmState.usePoi ? selectedPoi : null, authenticated: false };
+  }
+
+  function createCaptureContext(type) {
+    const context = {
+      id: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      type, appVersion: '1.5.0', processing: 'canvas-burned-watermark',
+      timeSource: 'device-clock-unverified', startedAtDeviceMs: Date.now(),
+      timezoneOffsetMinutes: new Date().getTimezoneOffset(), monotonicStart: performance.now(),
+      inspection: { ...inspection, source: 'user-entered-unverified' },
+      watermark: { ...wmState }, locationAtStart: captureLocationSnapshot(), locationSamples: [],
+      clockShiftDetected: false,
+    };
+    activeCaptureContext = context;
+    return context;
+  }
+
+  function checkCaptureClock(context = activeCaptureContext) {
+    if (!context || context.endedAtDeviceMs !== undefined) return;
+    const drift = Date.now() - context.startedAtDeviceMs - (performance.now() - context.monotonicStart);
+    if (Math.abs(drift) > 5000) context.clockShiftDetected = true;
+  }
+
+  function endCaptureContext(context) {
+    if (!context || context.endedAtDeviceMs !== undefined) return;
+    checkCaptureClock(context);
+    context.endedAtDeviceMs = Date.now();
+    context.elapsedMs = Math.max(0, Math.round(performance.now() - context.monotonicStart));
+    context.locationAtEnd = captureLocationSnapshot();
+  }
+
+  function releaseCaptureContext() {
+    activeCaptureContext = null;
+    watermarkRevision++;
+  }
+
+  function storedCaptureContext(context) {
+    if (!context) return undefined;
+    endCaptureContext(context);
+    const { monotonicStart, ...record } = context;
+    return JSON.parse(JSON.stringify(record));
+  }
+
 
   function renderPoiList() {
     const list = $('poi-list');
@@ -1093,15 +811,22 @@
     if (!list || !section) return;
     if (!nearByPois || nearByPois.length === 0) { section.style.display = 'none'; return; }
     section.style.display = 'block';
-    list.innerHTML = nearByPois.map((p, i) => {
+    list.replaceChildren();
+    nearByPois.forEach((p, i) => {
       const dist = parseInt(p.dist) || 0;
       const distText = dist > 1000 ? (dist/1000).toFixed(1)+'km' : dist+'m';
-      const active = selectedPoi === p.name ? 'active' : '';
-      return `<button class="poi-item ${active}" data-idx="${i}" style="display:flex;align-items:center;justify-content:space-between;width:100%;padding:8px 12px;border-radius:10px;background:${selectedPoi === p.name ? 'rgba(0,122,255,0.2)' : 'rgba(255,255,255,0.06)'};color:#fff;font-size:14px;text-align:left;border:none;cursor:pointer;">
-        <span style="flex:1">${p.name}</span>
-        <span style="font-size:11px;color:rgba(255,255,255,0.4);margin-left:8px;flex-shrink:0;">${distText}</span>
-      </button>`;
-    }).join('');
+      const button = document.createElement('button');
+      button.className = `poi-item ${selectedPoi === p.name ? 'active' : ''}`;
+      button.dataset.idx = i;
+      const name = document.createElement('span');
+      name.className = 'poi-name';
+      name.textContent = p.name;
+      const distance = document.createElement('span');
+      distance.className = 'poi-distance';
+      distance.textContent = distText;
+      button.append(name, distance);
+      list.appendChild(button);
+    });
 
     list.querySelectorAll('.poi-item').forEach(el => {
       el.addEventListener('click', () => {
@@ -1118,375 +843,884 @@
     });
   }
 
-  // ==================== 相机初始化 ====================
-  async function startCamera() {
-    const constraints = {
-      video: {
-        facingMode: useFrontCamera ? 'user' : 'environment',
-        width: { ideal: 1920 },
-        height: { ideal: 1080 },
-      },
-      audio: true,
-    };
+  // ==================== 相机生命周期 ====================
+  function cameraWanted() {
+    return !document.hidden && !$('preview-modal').classList.contains('show') &&
+      !$('gallery-panel').classList.contains('show');
+  }
 
-    // Stop previous stream
+  function cameraReady() {
+    const track = stream?.getVideoTracks()[0];
+    return cameraWanted() && track?.readyState === 'live' && !track.muted &&
+      video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0;
+  }
+
+  function setCameraMessage(message, retry = false) {
+    const overlay = $('loading-overlay');
+    overlay.classList.remove('hidden');
+    overlay.classList.toggle('error', retry);
+    overlay.querySelector('.loading-text').textContent = message;
+    $('camera-retry').hidden = !retry;
+  }
+
+  function releaseCamera() {
+    cameraGeneration++;
+    cameraStarting = false;
+    clearTimeout(cameraDeadline);
+    clearTimeout(cameraMuteTimer);
+    cameraMuteTimer = null;
     if (stream) {
-      stream.getTracks().forEach(t => t.stop());
-      stream = null;
+      stream.getTracks().forEach(track => {
+        track.onended = null;
+        track.onmute = null;
+        track.onunmute = null;
+        track.stop();
+      });
     }
+    stream = null;
+    video.pause();
+    video.srcObject = null;
+    $('watermark-preview').width = $('watermark-preview').height = 0;
+    lastPreviewKey = '';
+  }
 
+  async function startCamera() {
+    if (!cameraWanted() || cameraStarting || recordingFinishing || isCapturing) return;
+    if (cameraReady()) return;
+    releaseCamera();
+    const generation = cameraGeneration;
+    cameraStarting = true;
+    setCameraMessage('正在启动相机...');
+    // 权限窗口或系统相机可能长时间无响应；超时后让用户可以重试。
+    cameraDeadline = setTimeout(() => {
+      if (generation !== cameraGeneration) return;
+      releaseCamera();
+      setCameraMessage('相机启动超时，请重试', true);
+    }, 15000);
     try {
-      stream = await navigator.mediaDevices.getUserMedia(constraints);
-      video.srcObject = stream;
-      await video.play();
-      $('loading-overlay').classList.add('hidden');
-    } catch (err) {
-      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        showToast('⚠️ 请在设置中允许使用相机和麦克风');
-      } else {
-        showToast('⚠️ 相机启动失败: ' + err.message);
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error('请通过 HTTPS 在 Safari 中打开');
       }
+      const acquired = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: useFrontCamera ? 'user' : 'environment',
+          width: { ideal: CAMERA_PROFILES[wmState.quality].width }, height: { ideal: CAMERA_PROFILES[wmState.quality].height },
+          frameRate: { ideal: CAMERA_FPS, max: CAMERA_FPS },
+        },
+        audio: false,
+      });
+      if (generation !== cameraGeneration || !cameraWanted()) {
+        acquired.getTracks().forEach(track => track.stop());
+        return;
+      }
+      stream = acquired;
+      const track = acquired.getVideoTracks()[0];
+      const interrupted = () => {
+        if (generation !== cameraGeneration) return;
+        stopRecording();
+        releaseCamera();
+        setCameraMessage('相机已中断，点击重试恢复', true);
+      };
+      track.onended = interrupted;
+      // iOS 在切换音频会话时可能短暂静音视频轨，给系统恢复机会。
+      track.onmute = () => {
+        clearTimeout(cameraMuteTimer);
+        cameraMuteTimer = setTimeout(() => {
+          if (generation === cameraGeneration && track.muted) interrupted();
+        }, 1500);
+      };
+      track.onunmute = () => {
+        clearTimeout(cameraMuteTimer);
+        cameraMuteTimer = null;
+      };
+      video.srcObject = acquired;
+      await video.play();
+      if (generation !== cameraGeneration) return;
       $('loading-overlay').classList.add('hidden');
+      renderWatermarkPreview();
+    } catch (err) {
+      if (generation !== cameraGeneration) return;
+      releaseCamera();
+      const message = err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError'
+        ? '请允许相机权限，再点击重试'
+        : '相机暂时无法启动，请重试或在 Safari 中打开';
+      setCameraMessage(message, true);
+    } finally {
+      if (generation === cameraGeneration) {
+        cameraStarting = false;
+        clearTimeout(cameraDeadline);
+      }
     }
   }
 
   async function switchCamera() {
+    if (isRecording || recordingStarting || recordingFinishing || isCapturing || cameraStarting) {
+      showToast('请等待当前拍摄完成');
+      return;
+    }
     useFrontCamera = !useFrontCamera;
+    releaseCamera();
     await startCamera();
   }
 
   // ==================== 水印绘制 (Canvas) ====================
-  function drawWatermarkOnCanvas(ctx, width, height) {
-    const fontSize = wmState.size === 'sm' ? Math.round(height * 0.025)
-      : wmState.size === 'md' ? Math.round(height * 0.035)
-      : wmState.size === 'lg' ? Math.round(height * 0.045)
-      : Math.round(height * 0.055);
-    const lineHeight = fontSize * 1.35;
-    const padding = fontSize * 0.5;
+  function captureSize() {
+    const scale = Math.min(1, CAMERA_PROFILES[wmState.quality].width / Math.max(video.videoWidth, video.videoHeight));
+    return {
+      width: Math.max(2, Math.floor(video.videoWidth * scale / 2) * 2),
+      height: Math.max(2, Math.floor(video.videoHeight * scale / 2) * 2),
+    };
+  }
 
+  function renderWatermarkPreview() {
+    if (!stream || document.hidden || video.readyState < 2 || !video.videoWidth) return;
+    const size = recordingCanvas && isRecording
+      ? { width: recordingCanvas.width, height: recordingCanvas.height } : captureSize();
+    const stage = $('camera-container').getBoundingClientRect();
+    const topBar = $('top-bar').getBoundingClientRect();
+    const modeBar = $('mode-bar').getBoundingClientRect();
+    const bottomBar = $('bottom-bar').getBoundingClientRect();
+    const landscape = stage.width > stage.height;
+    const timerBottom = !landscape && timerEl.classList.contains('show') ? timerEl.getBoundingClientRect().bottom : 0;
+    const top = (landscape ? Math.max(topBar.bottom, modeBar.bottom) : Math.max(topBar.bottom, timerBottom)) - stage.top + 8;
+    const left = landscape ? Math.max(8, parseFloat(getComputedStyle($('top-bar')).paddingLeft)) : 8;
+    const right = landscape ? bottomBar.left - stage.left - 8 : stage.width - 8;
+    const bottom = landscape ? stage.height - 8 : Math.min(modeBar.top, bottomBar.top) - stage.top - 12;
+    const availableWidth = Math.max(1, right - left);
+    const availableHeight = Math.max(1, bottom - top);
+    const ratio = Math.min(availableWidth / size.width, availableHeight / size.height);
+    const layer = $('watermark-preview');
+    for (const element of [video, layer]) {
+      element.style.left = `${left + availableWidth / 2}px`;
+      element.style.top = `${top + availableHeight / 2}px`;
+      element.style.width = `${size.width * ratio}px`;
+      element.style.height = `${size.height * ratio}px`;
+    }
+    if (layer.width !== size.width || layer.height !== size.height) {
+      layer.width = size.width;
+      layer.height = size.height;
+    }
+    const key = `${size.width}:${size.height}:${watermarkKey()}`;
+    if (key === lastPreviewKey) return;
+    lastPreviewKey = key;
+    const ctx = layer.getContext('2d');
+    ctx.clearRect(0, 0, size.width, size.height);
+    drawWatermarkOnCanvas(ctx, size.width, size.height);
+  }
+
+  function watermarkKey() {
+    return `${wmState.showTime ? Math.floor(Date.now() / 1000) : ''}:${wmState.showDate ? formatDate() : ''}:${watermarkRevision}`;
+  }
+
+  function drawVideoFrame(ctx, width, height) {
+    // 横竖屏变化时保留完整画面，已开始的录像保持原输出尺寸。
+    const ratio = Math.min(width / video.videoWidth, height / video.videoHeight);
+    const drawWidth = video.videoWidth * ratio;
+    const drawHeight = video.videoHeight * ratio;
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, width, height);
+    ctx.drawImage(video, (width - drawWidth) / 2, (height - drawHeight) / 2, drawWidth, drawHeight);
+  }
+
+  function drawWatermarkOnCanvas(ctx, width, height) {
+    const entries = [`${inspection.stage === 'after' ? '交车后' : '接车前'} · 车况记录`];
+    if (inspection.vehicle) entries.push(`车辆（手填）：${inspection.vehicle}`);
+    if (inspection.order) entries.push(`订单尾号（手填）：${inspection.order}`);
+    if (wmState.showTime) entries.push(`${formatTime()}（设备时间）`);
+    if (wmState.showDate) entries.push(formatDate());
+    if (wmState.showLocation) {
+      entries.push(locationWatermarkText());
+    }
+    if (wmState.showCustom && wmState.customText) entries.push(wmState.customText);
+    if (activeCaptureContext?.clockShiftDetected) entries.push('注意：设备时间发生跳变');
+    entries.push('本机水印 · 未经第三方认证');
+    const sizes = { sm: 13, md: 16, lg: 20, xl: 24 };
+    let fontSize = Math.max(8, Math.round(width * sizes[wmState.size] / 390));
+    let lines, padding, lineHeight;
+    ctx.save();
+    // 按真实字宽换行，必要时缩小字体，让完整地址和自定义文字留在成片内。
+    do {
+      padding = Math.max(4, fontSize * 0.5);
+      lineHeight = fontSize * 1.35;
+      ctx.font = `600 ${fontSize}px -apple-system, "PingFang SC", "Helvetica Neue", sans-serif`;
+      lines = [];
+      for (const entry of entries) {
+        let line = '';
+        for (const character of Array.from(entry)) {
+          if (character === '\n' || (line && ctx.measureText(line + character).width > width - padding * 2)) {
+            lines.push(line);
+            line = character === '\n' ? '' : character;
+          } else line += character;
+        }
+        if (line) lines.push(line);
+      }
+      if (lines.length * lineHeight + padding * 2 <= height || fontSize <= 8) break;
+      fontSize--;
+    } while (true);
     const colorMap = { white: '#ffffff', yellow: '#ffd700', red: '#ff3b30', blue: '#5ac8fa', green: '#34c759', orange: '#ff9500' };
     ctx.fillStyle = colorMap[wmState.color] || '#ffffff';
-    ctx.font = `600 ${fontSize}px -apple-system, "PingFang SC", "Helvetica Neue", sans-serif`;
     ctx.textBaseline = 'top';
     ctx.shadowColor = 'rgba(0,0,0,0.8)';
     ctx.shadowBlur = fontSize * 0.5;
-    ctx.shadowOffsetX = 1;
-    ctx.shadowOffsetY = 1;
-
-    const lines = [];
-    if (wmState.showTime) lines.push(formatTime());
-    if (wmState.showDate) lines.push(formatDate());
-    if (wmState.showLocation) {
-      let loc = '';
-      if (wmState.useManualAddr) loc = wmState.manualAddr;
-      else if (wmState.usePoi && selectedPoi) loc = selectedPoi;
-      else loc = locationAddress || (locationError ? '定位失败' : '定位中');
-      lines.push(loc);
-    }
-    if (wmState.showCustom && wmState.customText) lines.push(wmState.customText);
-
-    // 位置
-    let startX, startY;
-    switch (wmState.position) {
-      case 'tl': startX = padding; startY = padding; break;
-      case 'tr': startX = width - padding; ctx.textAlign = 'right'; startY = padding; break;
-      case 'bl': startX = padding; startY = height - padding - lines.length * lineHeight; break;
-      case 'br': startX = width - padding; ctx.textAlign = 'right'; startY = height - padding - lines.length * lineHeight; break;
-      default: startX = padding; startY = padding;
-    }
-
-    lines.forEach((line, i) => {
-      ctx.fillText(line, startX, startY + i * lineHeight);
-    });
-
-    ctx.shadowColor = 'transparent';
-    ctx.shadowBlur = 0;
-    ctx.textAlign = 'start';
+    ctx.shadowOffsetX = ctx.shadowOffsetY = 1;
+    const right = wmState.position.endsWith('r');
+    ctx.textAlign = right ? 'right' : 'left';
+    const x = right ? width - padding : padding;
+    const y = wmState.position.startsWith('b') ? height - padding - lines.length * lineHeight : padding;
+    lines.forEach((line, index) => ctx.fillText(line, x, y + index * lineHeight));
+    ctx.restore();
   }
 
   // ==================== 拍照 ====================
-  function capturePhoto() {
-    if (!stream) { showToast('⚠️ 相机未就绪'); return; }
+  function encodeCanvas(canvas, quality) {
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const timeout = setTimeout(() => {
+        settled = true;
+        reject(new Error('照片处理超时'));
+      }, 15000);
+      try {
+        canvas.toBlob(blob => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timeout);
+          if (blob) resolve(blob);
+          else reject(new Error('无法生成照片'));
+        }, 'image/jpeg', quality);
+      } catch (error) {
+        settled = true;
+        clearTimeout(timeout);
+        reject(error);
+      }
+    });
+  }
 
-    const vw = video.videoWidth || 1280;
-    const vh = video.videoHeight || 720;
-
+  async function capturePhoto() {
+    if (isCapturing || recordingStarting || recordingFinishing || isRecording) return;
+    if (!cameraReady()) { showToast('相机未就绪，请重试打开相机'); return; }
+    if (!canKeepCapture()) return;
+    isCapturing = true;
+    const captureContext = createCaptureContext('photo');
     const canvas = document.createElement('canvas');
-    canvas.width = vw;
-    canvas.height = vh;
-    const ctx = canvas.getContext('2d');
-
-    // 绘制视频帧
-    ctx.drawImage(video, 0, 0, vw, vh);
-    // 绘制水印
-    drawWatermarkOnCanvas(ctx, vw, vh);
-
-    // 保存
-    canvas.toBlob((blob) => {
-      if (!blob) { showToast('⚠️ 拍照失败'); return; }
-      const url = URL.createObjectURL(blob);
-      const item = { type: 'photo', blob, url, timestamp: Date.now() };
-      galleryItems.unshift(item);
-      saveGallery();
-      showPreview(item);
-      showToast('✅ 拍照成功');
-    }, 'image/jpeg', 0.92);
+    const thumbnail = document.createElement('canvas');
+    try {
+      // 设备可能忽略 ideal 分辨率，限制处理尺寸以免分配超大 iOS 画布。
+      const size = captureSize();
+      canvas.width = size.width;
+      canvas.height = size.height;
+      const ctx = canvas.getContext('2d');
+      drawVideoFrame(ctx, canvas.width, canvas.height);
+      drawWatermarkOnCanvas(ctx, canvas.width, canvas.height);
+      const thumbScale = Math.min(1, 240 / Math.max(canvas.width, canvas.height));
+      thumbnail.width = Math.max(1, Math.round(canvas.width * thumbScale));
+      thumbnail.height = Math.max(1, Math.round(canvas.height * thumbScale));
+      thumbnail.getContext('2d').drawImage(canvas, 0, 0, thumbnail.width, thumbnail.height);
+      endCaptureContext(captureContext);
+      releaseCamera();
+      const [blob, smallBlob] = await Promise.all([
+        encodeCanvas(canvas, 0.9), encodeCanvas(thumbnail, 0.65).catch(() => null),
+      ]);
+      const stored = await addCapturedMedia('photo', blob, smallBlob, captureContext);
+      if (stored) showToast('拍照成功，已存入本机');
+    } catch (error) {
+      showToast('拍照未完成，请重试');
+    } finally {
+      canvas.width = canvas.height = thumbnail.width = thumbnail.height = 0;
+      isCapturing = false;
+      releaseCaptureContext();
+      if (cameraWanted()) startCamera();
+    }
   }
 
   // ==================== 录像 ====================
-  function startRecording() {
-    if (!stream) { showToast('⚠️ 相机未就绪'); return; }
-
-    const vw = video.videoWidth || 1280;
-    const vh = video.videoHeight || 720;
-
-    // Create recording canvas
-    recordingCanvas = document.createElement('canvas');
-    recordingCanvas.width = vw;
-    recordingCanvas.height = vh;
-    recordingCtx = recordingCanvas.getContext('2d');
-
-    // Get canvas stream
-    canvasStream = recordingCanvas.captureStream(30);
-
-    // 合并音频
-    const audioTracks = stream.getAudioTracks();
-    let combinedStream;
-    if (audioTracks.length > 0) {
-      combinedStream = new MediaStream([
-        ...canvasStream.getVideoTracks(),
-        ...audioTracks.map(t => t.clone())
-      ]);
-    } else {
-      combinedStream = canvasStream;
-    }
-
-    // 确定编码格式
-    let mimeType = '';
-    const types = [
-      'video/mp4;codecs=h264,aac',
-      'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
-      'video/mp4',
-      'video/webm;codecs=vp8,opus',
-      'video/webm',
-    ];
-    for (const t of types) {
-      if (MediaRecorder.isTypeSupported(t)) { mimeType = t; break; }
-    }
-
-    try {
-      mediaRecorder = new MediaRecorder(combinedStream, mimeType ? { mimeType } : {});
-    } catch (e) {
-      showToast('⚠️ 不支持录像功能');
-      return;
-    }
-
-    recordedChunks = [];
-    mediaRecorder.ondataavailable = (e) => {
-      if (e.data && e.data.size > 0) recordedChunks.push(e.data);
-    };
-
-    mediaRecorder.onstop = () => {
-      if (recordedChunks.length === 0) { showToast('⚠️ 录制失败'); return; }
-      const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || 'video/mp4' });
-      const url = URL.createObjectURL(blob);
-      const item = { type: 'video', blob, url, timestamp: Date.now() };
-      galleryItems.unshift(item);
-      saveGallery();
-      showPreview(item);
-      showToast('✅ 录制完成');
-
-      // 清理
-      if (animFrameId) { cancelAnimationFrame(animFrameId); animFrameId = null; }
-      if (recordingCanvas) { recordingCanvas = null; recordingCtx = null; }
-      if (canvasStream) { canvasStream.getTracks().forEach(t => t.stop()); canvasStream = null; }
-    };
-
-    mediaRecorder.onerror = () => {
-      showToast('⚠️ 录制出错');
-      stopRecording();
-    };
-
-    // Start recording
-    mediaRecorder.start(1000);
-
-    // Start drawing watermark frames
-    isRecording = true;
-    // 录像时自动用小字，避免水印太大
-    const _ol = $('watermark-overlay');
-    ['sm','md','lg','xl'].forEach(s => _ol.classList.remove('wm-size-' + s));
-    _ol.classList.add('wm-size-sm');
-
-    function drawFrame() {
-      if (!recordingCtx || !recordingCanvas) return;
-      recordingCtx.drawImage(video, 0, 0, recordingCanvas.width, recordingCanvas.height);
-      drawWatermarkOnCanvas(recordingCtx, recordingCanvas.width, recordingCanvas.height);
-      animFrameId = requestAnimationFrame(drawFrame);
-    }
-    drawFrame();
-
-    // 计时器
-    seconds = 0;
-    timerDisplay.textContent = '00:00';
-    timerEl.classList.add('show');
-    timerInterval = setInterval(() => {
-      seconds++;
-      const m = String(Math.floor(seconds / 60)).padStart(2, '0');
-      const s = String(seconds % 60).padStart(2, '0');
-      timerDisplay.textContent = `${m}:${s}`;
-    }, 1000);
-
-    shutterBtn.classList.add('recording');
+  function cancelRecordingFrames() {
+    if (animFrameId !== null) cancelAnimationFrame(animFrameId);
+    if (videoFrameId !== null) video.cancelVideoFrameCallback(videoFrameId);
+    animFrameId = videoFrameId = null;
+    clearInterval(timerInterval);
+    timerInterval = null;
   }
 
-  function stopRecording() {
-    if (!isRecording) return;
-    isRecording = false;
-
-    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-      try { mediaRecorder.stop(); } catch(e) {}
+  function cleanupRecording(session = recordingSession) {
+    if (session && session !== recordingSession) return;
+    releaseCaptureContext();
+    cancelRecordingFrames();
+    if (session) {
+      session.finished = true;
+      clearTimeout(session.stopTimeout);
+      clearTimeout(session.durationTimeout);
+      session.releaseAudioListeners?.();
+      if (session.wakeLock) {
+        try { Promise.resolve(session.wakeLock.release()).catch(() => {}); } catch (_) { /* Already released. */ }
+        session.wakeLock = null;
+      }
+      session.recorder.ondataavailable = null;
+      session.recorder.onstop = null;
+      session.recorder.onerror = null;
+      if (session.recorder.state !== 'inactive') {
+        try { session.recorder.stop(); } catch (error) { /* 已中断的编码器仍需释放轨道 */ }
+      }
     }
-
-    if (animFrameId) { cancelAnimationFrame(animFrameId); animFrameId = null; }
-
-    // 停止计时器
-    clearInterval(timerInterval);
+    recordingSession = null;
+    microphoneStream?.getTracks().forEach(track => track.stop());
+    canvasStream?.getTracks().forEach(track => track.stop());
+    microphoneStream = canvasStream = null;
+    if (recordingCanvas) recordingCanvas.width = recordingCanvas.height = 0;
+    if (watermarkCanvas) watermarkCanvas.width = watermarkCanvas.height = 0;
+    recordingCanvas = recordingCtx = watermarkCanvas = null;
+    mediaRecorder = null;
+    isRecording = recordingStarting = recordingFinishing = false;
     timerEl.classList.remove('show');
-
+    if ($('recording-audio-status')) $('recording-audio-status').textContent = '';
     shutterBtn.classList.remove('recording');
   }
 
-  // ==================== 预览 ====================
-  function showPreview(item) {
-    const modal = $('preview-modal');
-    const container = $('preview-media-container');
-    const actions = $('preview-actions');
-
-    container.innerHTML = '';
-    actions.innerHTML = '';
-
-    if (item.type === 'photo') {
-      const img = document.createElement('img');
-      img.src = item.url;
-      container.appendChild(img);
-    } else {
-      const vid = document.createElement('video');
-      vid.src = item.url;
-      vid.controls = true;
-      vid.autoplay = false;
-      vid.playsInline = true;
-      container.appendChild(vid);
+  async function finishRecording(session, interrupted = false) {
+    if (session !== recordingSession || session.finished) return;
+    session.finished = true;
+    session.failed ||= interrupted;
+    endCaptureContext(session.captureContext);
+    if (session.captureContext) session.captureContext.recording = {
+      interrupted: Boolean(session.failed), audioInterrupted: Boolean(session.audioInterrupted),
+      microphoneTrackPresent: Boolean(session.recorder.stream?.getAudioTracks().length),
+      outputMimeType: session.recorder.mimeType || null,
+    };
+    let blob = null;
+    try {
+      if (session.chunks.length) {
+        blob = new Blob(session.chunks, { type: session.recorder.mimeType || session.chunks[0].type });
+      }
+    } catch (error) { session.failed = true; }
+    session.chunks.length = 0;
+    cleanupRecording(session);
+    releaseCamera();
+    // 写入相册期间继续锁住快门，防止晚到的保存结果打断下一段录像。
+    recordingFinishing = true;
+    try {
+      if (!blob?.size) {
+        showToast('录制未完成，请重试');
+      } else if (await addCapturedMedia('video', blob, null, session.captureContext)) {
+        showToast(session.failed ? '录制中断，请检查已保留的片段' :
+          session.audioInterrupted ? '录制完成，期间声音曾中断，请检查录音' : '录制完成');
+      }
+    } catch (error) {
+      showToast('录像保存失败，请重试');
+    } finally {
+      recordingFinishing = false;
+      syncAccessibility();
+      if (cameraWanted()) startCamera();
     }
-
-    // 保存按钮 - 用分享方式保存到相册（iOS 推荐方式）
-    const saveBtn = document.createElement('button');
-    saveBtn.className = 'action-btn primary';
-    saveBtn.innerHTML = '💾 保存到相册';
-    saveBtn.onclick = () => saveToAlbum(item);
-    actions.appendChild(saveBtn);
-
-    // 分享按钮
-    const shareBtn = document.createElement('button');
-    shareBtn.className = 'action-btn secondary';
-    shareBtn.innerHTML = '📤 分享';
-    shareBtn.onclick = () => shareMedia(item);
-    actions.appendChild(shareBtn);
-
-    // 提示
-    const tip = document.createElement('div');
-    tip.style.cssText = 'text-align:center;font-size:12px;color:rgba(255,255,255,0.35);padding-top:4px;';
-    tip.textContent = 'iPhone 点「保存」→ 选择「存储到照片」即可存入相册';
-    actions.appendChild(tip);
-
-    modal.classList.add('show');
   }
 
-  // iOS 保存到相册（通过 Share API，用户选"存储到照片"）
-  async function saveToAlbum(item) {
-    if (!navigator.share) {
-      // 不支持分享，用下载方式
-      downloadFile(item);
+  function acquireMicrophone() {
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const timeout = setTimeout(() => {
+        settled = true;
+        reject(new Error('Microphone permission timed out'));
+      }, 10000);
+      Promise.resolve().then(() => navigator.mediaDevices.getUserMedia({ video: false, audio: true })).then(mic => {
+        if (settled) { mic.getTracks().forEach(track => track.stop()); return; }
+        settled = true;
+        clearTimeout(timeout);
+        resolve(mic);
+      }, error => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        reject(error);
+      });
+    });
+  }
+
+  async function startRecording() {
+    if (isRecording || recordingStarting || recordingFinishing || isCapturing) return;
+    if (!canKeepCapture()) return;
+    if (!cameraReady()) { showToast('相机未就绪，请重试打开相机'); return; }
+    if (locationService.getSnapshot().stale) startLocation(true);
+    if (!window.MediaRecorder || !HTMLCanvasElement.prototype.captureStream) {
+      showToast('当前浏览器不支持录像，请更新 iOS 后使用 Safari');
       return;
     }
+    recordingStarting = true;
+    const attempt = ++recordingAttempt;
     try {
-      const ext = item.type === 'photo' ? '.jpg' : '.mp4';
-      const mime = item.type === 'photo' ? 'image/jpeg' : (item.blob.type || 'video/mp4');
-      const file = new File([item.blob], `水印_${formatDate()}_${formatTime()}${ext}`, { type: mime });
-      await navigator.share({
-        files: [file],
-        title: '简单水印相机',
-        text: '水印照片/视频'
+      // 仅录像时申请音频；权限拒绝时保留无声录像能力。
+      let mic = null;
+      try {
+        mic = await acquireMicrophone();
+      } catch (error) {
+        if (attempt === recordingAttempt) showToast('麦克风不可用，将录制无声视频');
+      }
+      if (attempt !== recordingAttempt || !cameraReady()) {
+        mic?.getTracks().forEach(track => track.stop());
+        if (attempt === recordingAttempt) recordingStarting = false;
+        return;
+      }
+      microphoneStream = mic;
+      const captureContext = createCaptureContext('video');
+      const size = captureSize();
+      recordingCanvas = document.createElement('canvas');
+      recordingCanvas.width = size.width;
+      recordingCanvas.height = size.height;
+      recordingCtx = recordingCanvas.getContext('2d', { alpha: false });
+      watermarkCanvas = document.createElement('canvas');
+      watermarkCanvas.width = recordingCanvas.width;
+      watermarkCanvas.height = recordingCanvas.height;
+      const watermarkCtx = watermarkCanvas.getContext('2d');
+      let lastFrame = -Infinity;
+      let frameClock = null;
+      let lastWatermarkKey = '';
+      function drawFrame(now, metadata) {
+        if (!isRecording || recordingSession !== session) return;
+        try {
+          const clock = metadata && Number.isFinite(metadata.mediaTime) ? 'media' : 'animation';
+          const frameTime = clock === 'media' ? metadata.mediaTime * 1000 : now;
+          if (clock !== frameClock || frameTime < lastFrame) lastFrame = -Infinity;
+          frameClock = clock;
+          if (frameTime - lastFrame >= 1000 / CAMERA_FPS - 1 && video.readyState >= 2) {
+            lastFrame = frameTime;
+            const key = watermarkKey();
+            if (key !== lastWatermarkKey) {
+              watermarkCtx.clearRect(0, 0, watermarkCanvas.width, watermarkCanvas.height);
+              drawWatermarkOnCanvas(watermarkCtx, watermarkCanvas.width, watermarkCanvas.height);
+              lastWatermarkKey = key;
+            }
+            drawVideoFrame(recordingCtx, recordingCanvas.width, recordingCanvas.height);
+            recordingCtx.drawImage(watermarkCanvas, 0, 0);
+          }
+          if (video.requestVideoFrameCallback) videoFrameId = video.requestVideoFrameCallback(drawFrame);
+          else animFrameId = requestAnimationFrame(drawFrame);
+        } catch (error) {
+          session.failed = true;
+          stopRecording();
+        }
+      }
+      // 首帧先绘制，避免录制开头出现空白。
+      drawVideoFrame(recordingCtx, recordingCanvas.width, recordingCanvas.height);
+      drawWatermarkOnCanvas(recordingCtx, recordingCanvas.width, recordingCanvas.height);
+      canvasStream = recordingCanvas.captureStream(CAMERA_FPS);
+      const audioTracks = (mic?.getAudioTracks() || []).filter(track => track.readyState === 'live');
+      const combined = new MediaStream([
+        ...canvasStream.getVideoTracks(), ...audioTracks,
+      ]);
+      const types = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp8,opus', 'video/webm'];
+      const candidates = types.filter(type => {
+        try { return typeof MediaRecorder.isTypeSupported === 'function' && MediaRecorder.isTypeSupported(type); }
+        catch (_) { return false; }
       });
-      showToast('✅ 已分享，选择「存储到照片」保存');
-    } catch (e) {
-      if (e.name !== 'AbortError') {
-        downloadFile(item);
+      // isTypeSupported is advisory: Safari may still reject a codec at construction/start.
+      // Try browser-selected codecs last, without abandoning the already granted microphone.
+      candidates.push(null);
+      let session = null;
+      let lastFormatError = null;
+      for (const mimeType of candidates) {
+        let candidate = null;
+        let candidateSession = null;
+        try {
+          candidate = new MediaRecorder(combined, { ...(mimeType ? { mimeType } : {}), videoBitsPerSecond: CAMERA_PROFILES[wmState.quality].bitrate });
+          candidateSession = { recorder: candidate, captureContext, chunks: [], recordedBytes: 0, failed: false,
+            finished: false, audioInterrupted: false, stopTimeout: null, durationTimeout: null, wakeLock: null };
+          recordingSession = candidateSession;
+          candidate.ondataavailable = event => {
+            if (candidateSession !== recordingSession || candidateSession.finished) return;
+            if (event.data?.size) {
+              candidateSession.chunks.push(event.data);
+              candidateSession.recordedBytes += event.data.size;
+              // 限制单段缓冲，避免长时间录像耗尽 iOS 页面内存。
+              if (candidateSession.recordedBytes >= 64 * 1024 * 1024 && isRecording) {
+                showToast('本段录像已达容量限制，正在保存');
+                stopRecording();
+              }
+            }
+          };
+          candidate.onstop = () => { finishRecording(candidateSession); };
+          candidate.onerror = () => {
+            if (candidateSession !== recordingSession || candidateSession.finished) return;
+            candidateSession.failed = true;
+            stopRecording();
+          };
+          candidate.start(1000);
+          session = candidateSession;
+          mediaRecorder = candidate;
+          break;
+        } catch (error) {
+          lastFormatError = error;
+          // Only discard this failed candidate. Stopping the shared tracks would break fallback.
+          if (candidateSession) { candidateSession.finished = true; candidateSession.chunks.length = 0; }
+          if (candidate) {
+            candidate.ondataavailable = candidate.onstop = candidate.onerror = null;
+            if (candidate.state !== 'inactive') { try { candidate.stop(); } catch (_) { /* Unusable codec. */ } }
+          }
+          recordingSession = null;
+          if (!['NotSupportedError', 'TypeError'].includes(error.name)) throw error;
+        }
+      }
+      if (!session) throw lastFormatError || new Error('No recording format available');
+      recordingStarting = false;
+      isRecording = true;
+      let audioWasActive = false;
+      const updateAudioStatus = () => {
+        if (session !== recordingSession || session.finished || !isRecording) return;
+        const active = audioTracks.some(track => track.readyState === 'live' && track.enabled && !track.muted);
+        if (!active && audioTracks.length) session.audioInterrupted = true;
+        if (audioWasActive && !active) {
+          showToast('麦克风已中断，视频仍在录制，请检查声音');
+        }
+        audioWasActive = active;
+        const status = $('recording-audio-status');
+        if (status) {
+          status.textContent = active ? '麦克风开' : audioTracks.length ? '音频中断' : '无声';
+          status.dataset.state = active ? 'active' : 'silent';
+        }
+      };
+      for (const track of audioTracks) {
+        for (const event of ['mute', 'unmute', 'ended']) track.addEventListener(event, updateAudioStatus);
+      }
+      session.releaseAudioListeners = () => {
+        for (const track of audioTracks) {
+          for (const event of ['mute', 'unmute', 'ended']) track.removeEventListener(event, updateAudioStatus);
+        }
+      };
+      updateAudioStatus();
+      if (navigator.wakeLock?.request) {
+        try {
+          Promise.resolve(navigator.wakeLock.request('screen')).then(lock => {
+            if (session !== recordingSession || session.finished || !isRecording || document.hidden) {
+              try { Promise.resolve(lock.release()).catch(() => {}); } catch (_) { /* Already released. */ }
+            } else session.wakeLock = lock;
+          }).catch(() => { /* Recording is still available if screen wake lock is unsupported/denied. */ });
+        } catch (_) { /* Recording is still available if the platform refuses a wake lock. */ }
+      }
+      const startedAt = performance.now();
+      timerDisplay.textContent = '00:00';
+      timerEl.classList.add('show');
+      timerInterval = setInterval(() => {
+        seconds = Math.floor((performance.now() - startedAt) / 1000);
+        timerDisplay.textContent = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+      }, 1000);
+      // timeslice 不能保证按时返回数据，另用时长上限约束内存。
+      session.durationTimeout = setTimeout(() => {
+        if (session !== recordingSession || !isRecording) return;
+        showToast('已录制3分钟，正在保存；可继续拍摄下一段');
+        stopRecording();
+      }, MAX_RECORDING_MS);
+      shutterBtn.classList.add('recording');
+      showToast(audioWasActive ? '开始录像，每段最长3分钟' : '无声录像已开始，每段最长3分钟');
+      renderWatermarkPreview();
+      drawFrame(performance.now());
+    } catch (error) {
+      cleanupRecording();
+      showToast('录像启动失败，请重试');
+    }
+  }
+
+  function stopRecording() {
+    recordingAttempt++;
+    recordingStarting = false;
+    const session = recordingSession;
+    if (!session || session.finished) return;
+    if (recordingFinishing) return;
+    endCaptureContext(session.captureContext);
+    isRecording = false;
+    recordingFinishing = true;
+    cancelRecordingFrames();
+    timerEl.classList.remove('show');
+    shutterBtn.classList.remove('recording');
+    session.releaseAudioListeners?.();
+    if (session.wakeLock) {
+      try { Promise.resolve(session.wakeLock.release()).catch(() => {}); } catch (_) { /* Already released. */ }
+      session.wakeLock = null;
+    }
+    // 停止音频采集；最终数据仍由 ondataavailable/onstop 接收。
+    microphoneStream?.getTracks().forEach(track => track.stop());
+    clearTimeout(session.durationTimeout);
+    // iOS 编码器中断后可能没有最终事件；保留已返回片段并解除忙碌状态。
+    session.stopTimeout = setTimeout(() => finishRecording(session, true), 5000);
+    if (session.recorder.state !== 'inactive') {
+      try { session.recorder.stop(); }
+      catch (error) { finishRecording(session, true); }
+    }
+  }
+
+  // ==================== 本机相册与预览 ====================
+  function updateGalleryStatus() {
+    $('gallery-status').textContent = pendingMedia.size
+      ? '有作品尚未存入本机，请打开预览并保存到系统相册，勿刷新页面。'
+      : '作品保存在本机，请将重要作品另存到系统相册。';
+  }
+
+  function canKeepCapture() {
+    const bytes = [...pendingMedia.values()].reduce((sum, item) => sum + item.blob.size, 0);
+    if (bytes < 96 * 1024 * 1024) return true;
+    showToast('临时作品占用过多，请先保存并删除临时作品后继续拍摄');
+    return false;
+  }
+
+  async function loadGallery(reset = true) {
+    if (!reset && (galleryLoading || !galleryCursor)) return;
+    const generation = ++galleryLoadGeneration;
+    galleryLoading = true;
+    galleryRetry = null;
+    if ($('gallery-panel').classList.contains('show')) updateGalleryGrid();
+    try {
+      const page = await MediaStore.listPage({ before: reset ? null : galleryCursor, limit: 30 });
+      if (generation !== galleryLoadGeneration) return;
+      const current = new Map((reset ? [] : galleryItems).map(item => [item.id, item]));
+      page.items.forEach(item => current.set(item.id, item));
+      pendingMedia.forEach(record => {
+        current.set(record.id, { id: record.id, type: record.type, timestamp: record.timestamp, size: record.blob.size, thumbnail: record.thumbnail });
+      });
+      galleryItems = [...current.values()].sort((a, b) => b.timestamp - a.timestamp || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
+      galleryCursor = page.nextCursor;
+      updateGalleryStatus();
+    } catch (error) {
+      if (generation !== galleryLoadGeneration) return;
+      galleryRetry = reset;
+      $('gallery-status').textContent = '暂时无法读取本机相册。新作品会临时保留，请及时另存。';
+    } finally {
+      if (generation === galleryLoadGeneration) {
+        galleryLoading = false;
+        if ($('gallery-panel').classList.contains('show')) updateGalleryGrid();
       }
     }
   }
 
-  function downloadFile(item) {
-    const a = document.createElement('a');
-    a.href = item.url;
-    const ext = item.type === 'photo' ? '.jpg' : '.mp4';
-    a.download = `水印_${new Date().toISOString().slice(0,19).replace(/[:-]/g,'')}${ext}`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    showToast('✅ 已保存（在"文件"App中可找到）');
+  async function addCapturedMedia(type, blob, thumbnail = null, captureContext = null) {
+    galleryLoadGeneration++;
+    galleryLoading = false;
+    const id = captureContext?.id || globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const record = { id, type, timestamp: captureContext?.startedAtDeviceMs ?? Date.now(), blob, thumbnail, evidence: storedCaptureContext(captureContext) };
+    const item = { id, type, timestamp: record.timestamp, size: blob.size, thumbnail };
+    pendingMedia.set(id, record);
+    galleryItems.unshift(item);
+    updateGalleryStatus();
+    let stored = false;
+    try {
+      await MediaStore.put(record);
+      pendingMedia.delete(id);
+      stored = true;
+    } catch (error) {
+      // 保留内存备份，不清掉用户尚未成功写入的作品。
+      showToast('本机存储不可用，请立即保存作品到系统相册');
+    }
+    updateGalleryStatus();
+    if ($('gallery-panel').classList.contains('show')) updateGalleryGrid();
+    await showPreview(item, record);
+    return stored;
   }
 
-  function saveToGallery(item) {
-    saveToAlbum(item);
+  function releasePreview() {
+    evidenceExportController?.abort();
+    evidenceExportController = null;
+    const container = $('preview-media-container');
+    const playing = container.querySelector('video');
+    if (playing) { playing.pause(); playing.removeAttribute('src'); playing.load(); }
+    container.replaceChildren();
+    $('preview-actions').replaceChildren();
+    if (previewURL) URL.revokeObjectURL(previewURL);
+    previewURL = null;
+  }
+
+  function closePreview() {
+    if (sharing) { showToast('请先关闭系统分享窗口'); return; }
+    previewGeneration++;
+    $('preview-modal').classList.remove('show');
+    releasePreview();
+    startCamera();
+  }
+
+  async function showPreview(item, captured = null) {
+    const generation = ++previewGeneration;
+    const modal = $('preview-modal');
+    const container = $('preview-media-container');
+    const actions = $('preview-actions');
+    releasePreview();
+    modal.classList.add('show');
+    container.textContent = '正在读取作品...';
+    releaseCamera();
+    try {
+      const record = captured || pendingMedia.get(item.id) || await MediaStore.get(item.id);
+      if (generation !== previewGeneration) return;
+      if (!record?.blob) throw new Error('Media is no longer available');
+      previewURL = URL.createObjectURL(record.blob);
+      container.replaceChildren();
+      const media = document.createElement(item.type === 'photo' ? 'img' : 'video');
+      media.src = previewURL;
+      if (item.type === 'video') { media.controls = true; media.playsInline = true; }
+      else media.alt = '水印照片';
+      container.appendChild(media);
+      const addButton = (text, style, icon, handler) => {
+        const button = document.createElement('button');
+        button.className = `action-btn ${style}`;
+        button.innerHTML = uiIcon(icon);
+        const label = document.createElement('span');
+        label.textContent = text;
+        button.appendChild(label);
+        button.onclick = handler;
+        actions.appendChild(button);
+        return button;
+      };
+      addButton('下载原文件', 'primary', 'download', () => downloadFile(record));
+      addButton('分享', 'secondary', 'share', () => shareMedia(record));
+      addButton('存入相册', 'secondary', 'image', () => shareMedia(record));
+      addButton('删除此作品', 'secondary danger', 'trash', async () => {
+        if (sharing || !confirm('删除此作品？已经保存到系统相册的副本不受影响。')) return;
+        try {
+          if (!pendingMedia.has(item.id)) await MediaStore.remove(item.id);
+          galleryLoadGeneration++;
+          galleryLoading = false;
+          pendingMedia.delete(item.id);
+          galleryItems = galleryItems.filter(entry => entry.id !== item.id);
+          updateGalleryStatus();
+          if ($('gallery-panel').classList.contains('show')) updateGalleryGrid();
+          if (generation === previewGeneration) closePreview();
+        } catch (error) { showToast('删除失败，作品仍保留，请稍后重试'); }
+      });
+      let manifestBlob = null;
+      const evidenceButton = addButton('导出校验记录', 'evidence-action', 'check', async () => {
+        if (sharing || evidenceExportController) return;
+        if (manifestBlob) {
+          downloadBlob(manifestBlob, `${mediaFile(record).name}.record.json`);
+          showToast('已发起记录下载，请与原文件一同保管');
+          return;
+        }
+        const controller = new AbortController();
+        evidenceExportController = controller;
+        evidenceButton.disabled = true;
+        const label = evidenceButton.querySelector('span');
+        try {
+          const manifest = await Evidence.createManifest(record, { signal: controller.signal,
+            onProgress: ({ progress }) => { label.textContent = `正在计算校验 ${Math.round(progress * 100)}%`; } });
+          if (generation !== previewGeneration) return;
+          manifestBlob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
+          label.textContent = '下载校验记录';
+          showToast('校验记录已准备好，请点击下载；本机记录不等于认证存证');
+        } catch (error) {
+          if (generation === previewGeneration && error.name !== 'AbortError') {
+            label.textContent = '重试导出校验记录';
+            showToast('校验记录生成失败，视频原文件仍保留');
+          }
+        } finally {
+          if (evidenceExportController === controller) evidenceExportController = null;
+          if (evidenceButton.isConnected) evidenceButton.disabled = sharing;
+        }
+      });
+      const tip = document.createElement('div');
+      tip.className = 'preview-save-hint';
+      tip.textContent = pendingMedia.has(item.id)
+        ? '尚未存入本机，关闭页面会丢失，请立即保存到系统相册。'
+        : '举证请保留原文件和校验记录；相册导出或聊天转发可能改变文件。本机记录未认证。';
+      actions.appendChild(tip);
+    } catch (error) {
+      if (generation !== previewGeneration) return;
+      container.textContent = '作品暂时无法读取，请关闭后重试。';
+      showToast('读取失败，请稍后重试');
+    }
+  }
+
+  function mediaFile(item) {
+    const ext = item.type === 'photo' ? 'jpg' : (item.blob.type.includes('webm') ? 'webm' : 'mp4');
+    return new File([item.blob], `水印_${new Date(item.timestamp).toISOString().replace(/[:.]/g, '-')}.${ext}`, { type: item.blob.type });
+  }
+
+  function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
   }
 
   async function shareMedia(item) {
-    if (!navigator.share) {
-      saveToGallery(item);
+    if (sharing) return;
+    const file = mediaFile(item);
+    if (!navigator.share || (navigator.canShare && !navigator.canShare({ files: [file] }))) {
+      downloadFile(item);
       return;
     }
+    sharing = true;
+    $('preview-actions').querySelectorAll('button').forEach(button => { button.disabled = true; });
     try {
-      const file = item.type === 'photo'
-        ? new File([item.blob], `watermark_${Date.now()}.jpg`, { type: 'image/jpeg' })
-        : new File([item.blob], `watermark_${Date.now()}.mp4`, { type: item.blob.type || 'video/mp4' });
+      // File 已经在打开预览时读入，避免异步读库丢失 Safari 用户手势。
       await navigator.share({ files: [file], title: '简单水印相机' });
-    } catch (e) {
-      if (e.name !== 'AbortError') saveToGallery(item);
+      showToast('分享窗口已关闭，请在照片或目标应用中确认保存');
+    } catch (error) {
+      if (error.name !== 'AbortError') {
+        showToast('分享未完成，请点击「下载原文件」重试');
+      }
+    } finally {
+      sharing = false;
+      $('preview-actions').querySelectorAll('button').forEach(button => { button.disabled = false; });
     }
   }
 
-  // ==================== 相册管理 ====================
-  function saveGallery() {
-    try {
-      // 只存元数据（blob 太大）— 我们用 IndexedDB 存 blob 引用
-      // 简化：只存当前 session 的 blob URL
-      updateGalleryGrid();
-    } catch(e) { /* ignore */ }
+  function downloadFile(item) {
+    if (sharing) return;
+    const file = mediaFile(item);
+    const url = URL.createObjectURL(file);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = file.name;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    // 独立 URL 避免关闭预览时中断浏览器下载，稍后释放。
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    showToast('已发起下载，请在浏览器下载列表或文件 App 中确认');
+  }
+
+  function clearGalleryGrid() {
+    $('gallery-grid').replaceChildren();
+    galleryURLs.forEach(url => URL.revokeObjectURL(url));
+    galleryURLs = [];
   }
 
   function updateGalleryGrid() {
+    clearGalleryGrid();
     const grid = $('gallery-grid');
     if (galleryItems.length === 0) {
-      grid.innerHTML = `<div class="gallery-empty"><div class="big-icon">📸</div><div>还没有拍摄内容<br>去拍一张吧！</div></div>`;
-      return;
+      grid.innerHTML = galleryLoading
+        ? `<div class="gallery-empty"><div class="big-icon">${uiIcon('image')}</div><p class="gallery-empty-title">正在读取作品</p><p class="gallery-empty-hint">精彩片刻，即将呈现</p></div>`
+        : `<div class="gallery-empty"><div class="big-icon">${uiIcon('image')}</div><p class="gallery-empty-title">第一张，从现在开始</p><p class="gallery-empty-hint">拍下的照片和视频，会保存在这里</p></div>`;
     }
-
-    grid.innerHTML = galleryItems.map((item, i) => {
-      return `<div class="gallery-item" data-index="${i}">
-        ${item.type === 'photo'
-          ? `<img src="${item.url}" alt="photo">`
-          : `<video src="${item.url}" muted></video>`
-        }
-        <span class="media-type-badge">${item.type === 'photo' ? '📷' : '🎬'}</span>
-      </div>`;
-    }).join('');
-
-    grid.querySelectorAll('.gallery-item').forEach(el => {
-      el.addEventListener('click', () => {
-        const idx = parseInt(el.dataset.index);
-        if (galleryItems[idx]) showPreview(galleryItems[idx]);
-      });
+    galleryItems.forEach(item => {
+      const button = document.createElement('button');
+      button.className = 'gallery-item';
+      button.dataset.id = item.id;
+      button.setAttribute('aria-label', `${item.type === 'photo' ? '照片' : '视频'} ${new Date(item.timestamp).toLocaleString()}`);
+      if (item.thumbnail) {
+        const thumbnail = document.createElement('img');
+        const url = URL.createObjectURL(item.thumbnail);
+        galleryURLs.push(url);
+        thumbnail.src = url;
+        thumbnail.alt = item.type === 'photo' ? '照片缩略图' : '视频缩略图';
+        thumbnail.loading = 'lazy';
+        button.appendChild(thumbnail);
+      } else {
+        const placeholder = document.createElement('span');
+        placeholder.className = 'gallery-placeholder';
+        placeholder.innerHTML = uiIcon(item.type === 'photo' ? 'image' : 'video');
+        button.appendChild(placeholder);
+      }
+      const badge = document.createElement('span');
+      badge.className = 'media-type-badge';
+      badge.textContent = item.type === 'photo' ? '照片' : '视频';
+      button.appendChild(badge);
+      button.onclick = () => showPreview(item);
+      grid.appendChild(button);
     });
+    if (galleryCursor || galleryRetry !== null) {
+      const more = document.createElement('button');
+      more.className = 'action-btn secondary gallery-more';
+      more.textContent = galleryLoading ? '正在读取...' : galleryRetry !== null ? '重试加载' : '加载更多';
+      more.disabled = galleryLoading;
+      more.onclick = () => loadGallery(galleryRetry ?? false);
+      grid.appendChild(more);
+    }
   }
 
   // ==================== Shutter Action ====================
@@ -1511,17 +1745,117 @@
     toastTimeout = setTimeout(() => toast.classList.remove('show'), 2000);
   }
 
+  const panelReturnFocus = new Map();
   function showPanel(id) {
+    if (id === 'gallery-panel' && (isRecording || recordingStarting || recordingFinishing || isCapturing)) {
+      showToast('请等待当前拍摄保存完成'); return;
+    }
+    panelReturnFocus.set(id, document.activeElement);
+    syncAccessibility();
     $(`${id}-overlay`).classList.add('show');
     $(id).classList.add('show');
+    $(id).querySelector('[data-close-panel]').focus({ preventScroll: true });
+    if (id === 'gallery-panel') {
+      updateGalleryGrid();
+      releaseCamera();
+      loadGallery();
+    }
   }
   function hidePanel(id) {
+    const restoreFocus = $(id).contains(document.activeElement);
     $(`${id}-overlay`).classList.remove('show');
     $(id).classList.remove('show');
+    if (restoreFocus) panelReturnFocus.get(id)?.focus({ preventScroll: true });
+    panelReturnFocus.delete(id);
+    if (id === 'gallery-panel') {
+      galleryLoadGeneration++;
+      galleryLoading = false;
+      clearGalleryGrid();
+      startCamera();
+    }
   }
 
   // ==================== 初始化设置面板交互 ====================
+  function syncAccessibility() {
+    const locked = isRecording || recordingFinishing;
+    $('watermark-panel').querySelectorAll('input, button:not([data-close-panel]):not(#btn-refresh-location)').forEach(control => { control.disabled = locked; });
+    document.querySelectorAll('.toggle').forEach(button => {
+      button.setAttribute('aria-pressed', String(button.classList.contains('on')));
+    });
+    document.querySelectorAll('.mode-btn, .color-dot, #position-options .option-btn, #size-options .option-btn').forEach(button => {
+      button.setAttribute('aria-pressed', String(button.classList.contains('active')));
+    });
+    shutterBtn.setAttribute('aria-label', currentMode === 'photo' ? '拍照' :
+      shutterBtn.classList.contains('recording') ? '停止录像' : '开始录像');
+  }
+
   function initSettings() {
+    document.querySelectorAll('[data-stage]').forEach(button => button.addEventListener('click', () => {
+      inspection.stage = button.dataset.stage;
+      document.querySelectorAll('[data-stage]').forEach(option => {
+        option.classList.toggle('active', option === button);
+        option.setAttribute('aria-pressed', String(option === button));
+      });
+      updateWatermarkOverlay();
+    }));
+    for (const [id, key, limit] of [['vehicle-label', 'vehicle', 16], ['order-label', 'order', 12]]) {
+      $(id).addEventListener('input', () => { inspection[key] = $(id).value.trim().slice(0, limit); updateWatermarkOverlay(); });
+    }
+    $('new-inspection').addEventListener('click', () => {
+      inspection.vehicle = inspection.order = '';
+      inspection.stage = 'before';
+      $('vehicle-label').value = $('order-label').value = '';
+      document.querySelector('[data-stage="before"]').click();
+      showToast('已清空车辆和订单标记，请核对新一单');
+    });
+    $('location-summary').addEventListener('click', refreshLocation);
+    document.querySelectorAll('#quality-options .option-btn').forEach(button => {
+      const selected = button.dataset.quality === wmState.quality;
+      button.classList.toggle('active', selected);
+      button.setAttribute('aria-pressed', String(selected));
+      button.addEventListener('click', async () => {
+        if (button.dataset.quality === wmState.quality) return;
+        if (isRecording || recordingStarting || recordingFinishing || isCapturing || cameraStarting) {
+          showToast('请等待当前拍摄完成后再切换画质');
+          return;
+        }
+        wmState.quality = button.dataset.quality;
+        document.querySelectorAll('#quality-options .option-btn').forEach(option => {
+          const active = option.dataset.quality === wmState.quality;
+          option.classList.toggle('active', active);
+          option.setAttribute('aria-pressed', String(active));
+        });
+        updateWatermarkOverlay();
+        releaseCamera();
+        await startCamera();
+      });
+    });
+    const toggles = { time: 'showTime', date: 'showDate', location: 'showLocation', custom: 'showCustom', 'manual-addr': 'useManualAddr', poi: 'usePoi' };
+    Object.entries(toggles).forEach(([id, key]) => $(`toggle-${id}`).classList.toggle('on', wmState[key]));
+    $('custom-text-input').value = wmState.customText;
+    $('manual-addr-input').value = wmState.manualAddr;
+    document.querySelectorAll('#position-options .option-btn').forEach(button => button.classList.toggle('active', button.dataset.pos === wmState.position));
+    document.querySelectorAll('#size-options .option-btn').forEach(button => button.classList.toggle('active', button.dataset.size === wmState.size));
+    document.querySelectorAll('.color-dot').forEach(dot => dot.classList.toggle('active', dot.dataset.color === wmState.color));
+    syncAccessibility();
+    // Observe only control classes, not the clock or video; attribute updates do not loop.
+    const controlObserver = new MutationObserver(syncAccessibility);
+    document.querySelectorAll('.toggle, .color-dot, .mode-btn, #position-options .option-btn, #size-options .option-btn, #shutter-btn').forEach(button => {
+      controlObserver.observe(button, { attributes: true, attributeFilter: ['class'] });
+    });
+    let previewWasOpen = false;
+    let previewReturnFocus = null;
+    new MutationObserver(() => {
+      const open = $('preview-modal').classList.contains('show');
+      if (open === previewWasOpen) return;
+      previewWasOpen = open;
+      if (open) {
+        previewReturnFocus = document.activeElement;
+        $('preview-close').focus({ preventScroll: true });
+      } else if (previewReturnFocus?.isConnected) {
+        previewReturnFocus.focus({ preventScroll: true });
+      }
+    }).observe($('preview-modal'), { attributes: true, attributeFilter: ['class'] });
     // 时间开关
     $('toggle-time').addEventListener('click', () => {
       wmState.showTime = !wmState.showTime;
@@ -1537,6 +1871,7 @@
       wmState.showLocation = !wmState.showLocation;
       $('toggle-location').classList.toggle('on', wmState.showLocation);
       updateWatermarkOverlay();
+      if (wmState.showLocation && !currentLocation) startLocation();
     });
     $('toggle-custom').addEventListener('click', () => {
       wmState.showCustom = !wmState.showCustom;
@@ -1558,6 +1893,7 @@
         wmState.manualAddr = $('manual-addr-input').value.trim();
       }
       updateWatermarkOverlay();
+      if (!wmState.useManualAddr && !currentLocation) startLocation();
     });
 
     // 手动地址输入
@@ -1575,7 +1911,7 @@
     $('toggle-poi').addEventListener('click', () => {
       wmState.usePoi = !wmState.usePoi;
       $('toggle-poi').classList.toggle('on', wmState.usePoi);
-      if (!wmState.usePoi) selectedPoi = '';
+      selectedPoi = wmState.usePoi ? (nearByPois[0]?.name || '') : '';
       renderPoiList();
       updateLocationHint();
       updateWatermarkOverlay();
@@ -1614,6 +1950,9 @@
     // 面板开关
     $('btn-watermark-settings').addEventListener('click', () => showPanel('watermark-panel'));
     $('watermark-panel-overlay').addEventListener('click', () => hidePanel('watermark-panel'));
+    document.querySelectorAll('[data-close-panel]').forEach(button => {
+      button.addEventListener('click', () => hidePanel(button.dataset.closePanel));
+    });
 
     // 相册面板
     $('btn-gallery').addEventListener('click', () => showPanel('gallery-panel'));
@@ -1623,14 +1962,7 @@
     $('btn-settings').addEventListener('click', () => showPanel('watermark-panel'));
 
     // 预览关闭
-    $('preview-close').addEventListener('click', () => {
-      $('preview-modal').classList.remove('show');
-      // 清理之前的视频播放
-      const container = $('preview-media-container');
-      const vid = container.querySelector('video');
-      if (vid) { vid.pause(); vid.src = ''; }
-      container.innerHTML = '';
-    });
+    $('preview-close').addEventListener('click', closePreview);
 
     // 切换摄像头
     $('btn-switch-camera').addEventListener('click', switchCamera);
@@ -1638,13 +1970,14 @@
     // 模式切换
     modeBtns.forEach(btn => {
       btn.addEventListener('click', () => {
-        if (isRecording) {
+        if (isRecording || recordingStarting || recordingFinishing || isCapturing) {
           showToast('⏹️ 请先停止录像');
           return;
         }
         modeBtns.forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         currentMode = btn.dataset.mode;
+        shutterBtn.classList.toggle('video-mode', currentMode === 'video');
       });
     });
 
@@ -1654,38 +1987,78 @@
 
   // ==================== 定时更新时间 ====================
   setInterval(() => {
-    if (wmState.showTime || wmState.showDate) updateWatermarkOverlay();
+    if (document.hidden) return;
+    checkCaptureClock();
+    if (isRecording && !locationPending && performance.now() - lastLocationAttemptAt >= 45000) startLocation(true);
+    updateWatermarkOverlay();
   }, 1000);
 
   // ==================== 键盘快捷键 ====================
   document.addEventListener('keydown', (e) => {
+    const dialog = ['preview-modal', 'gallery-panel', 'watermark-panel'].map($).find(element => element.classList.contains('show'));
+    if (dialog) {
+      if (e.key === 'Escape') {
+        if (dialog.id === 'preview-modal') closePreview();
+        else hidePanel(dialog.id);
+        e.preventDefault();
+      } else if (e.key === 'Tab') {
+        const controls = [...dialog.querySelectorAll('button:not(:disabled), input:not(:disabled), video[controls], [tabindex="0"]')]
+          .filter(element => element.getClientRects().length > 0);
+        const first = controls[0], last = controls[controls.length - 1];
+        if (first && ((!dialog.contains(document.activeElement)) ||
+            (e.shiftKey && document.activeElement === first) || (!e.shiftKey && document.activeElement === last))) {
+          (e.shiftKey ? last : first).focus();
+          e.preventDefault();
+        }
+      }
+      return;
+    }
+    if (e.repeat || e.target.closest('input, textarea, button, [contenteditable="true"]')) return;
     if (e.key === ' ' || e.key === 'Enter') { onShutterPress(); e.preventDefault(); }
   });
 
   // ==================== 启动 ====================
   async function init() {
     initSettings();
+    loadGallery();
+    $('camera-retry').addEventListener('click', () => startCamera());
     startLocation();
     await startCamera();
     updateWatermarkOverlay();
   }
 
-  // 页面可见性变化时处理相机
+  function suspendCamera() {
+    stopRecording();
+    releaseCamera();
+    $('preview-media-container').querySelector('video')?.pause();
+    locationNeedsResume = true;
+    locationGeneration++;
+    locationPending = false;
+    locationController?.abort();
+    locationService.stop();
+    evidenceExportController?.abort();
+  }
+  function resumeCamera() {
+    startCamera();
+    if (locationNeedsResume || locationService.getSnapshot().stale) startLocation();
+  }
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden) {
-      // 页面隐藏，如果正在录制继续
-    } else {
-      // 页面重新可见，如果相机流丢失则重启
-      if (!video.srcObject) {
-        startCamera();
-      }
-    }
+    if (document.hidden) suspendCamera();
+    else resumeCamera();
   });
+  window.addEventListener('pagehide', suspendCamera);
+  window.addEventListener('pageshow', resumeCamera);
+  window.addEventListener('resize', renderWatermarkPreview);
+  video.addEventListener('resize', renderWatermarkPreview);
 
   init();
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js?v=' + Date.now()).catch(function(){});
+    // 固定地址允许浏览器正确检查更新，并复用离线缓存。
+    navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).catch(() => {
+      showToast('离线功能暂不可用，请联网后重新打开');
+    });
   }
+
 })();
 </script>
 </body>
