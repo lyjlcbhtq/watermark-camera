@@ -805,7 +805,7 @@
   function createCaptureContext(type) {
     const context = {
       id: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      type, appVersion: '1.6.2', processing: 'canvas-burned-watermark',
+      type, appVersion: '1.6.3', processing: 'canvas-burned-watermark',
       timeSource: 'device-clock-unverified', startedAtDeviceMs: Date.now(),
       timezoneOffsetMinutes: new Date().getTimezoneOffset(), monotonicStart: performance.now(),
       inspection: { ...inspection, source: 'user-entered-unverified' },
@@ -1105,7 +1105,7 @@
     }
     if (wmState.showCustom && wmState.customText) entries.push(wmState.customText);
     if (activeCaptureContext?.clockShiftDetected) entries.push('注意：设备时间发生跳变');
-    entries.push('本机水印 · 未经第三方认证');
+    entries.push('本机水印');
     const sizes = { sm: 13, md: 16, lg: 20, xl: 24 };
     let fontSize = Math.max(8, Math.round(width * sizes[wmState.size] / 390));
     let lines, padding, lineHeight;
