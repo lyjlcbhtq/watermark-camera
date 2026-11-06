@@ -110,6 +110,17 @@ async function encodedClipReady(page) {
   await page.waitForFunction(() => window.nativeRecordingState?.chunks > 0);
 }
 
+async function waitForStoredCount(page, expected) {
+  // waitForFunction treats a returned Promise as truthy; poll resolved IDB data.
+  const deadline = Date.now() + 10000;
+  while (true) {
+    const count = await page.evaluate(async () => (await MediaStore.list()).length);
+    if (count === expected) return;
+    assert.ok(Date.now() < deadline, `expected ${expected} stored works, got ${count}`);
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+}
+
 test('the app opens in video mode without microphone access until recording begins', async t => {
   const { page } = await setup(t, { mode: 'default' });
   await ready(page);
@@ -253,7 +264,7 @@ test('app shell, manifest and icons load offline under a GitHub Pages subpath', 
   await page.waitForFunction(() => navigator.serviceWorker.controller !== null);
   const keys = await page.evaluate(async () => {
     const registration = await navigator.serviceWorker.ready;
-    const name = `watermark-camera-shell-${encodeURIComponent(registration.scope)}-v11`;
+    const name = `watermark-camera-shell-${encodeURIComponent(registration.scope)}-v12`;
     return (await (await caches.open(name)).keys()).map(request => request.url);
   });
   const expectedShell = ['index.html', 'media-store.js', 'manifest.json', 'icon.svg',
@@ -376,7 +387,7 @@ test('in-flight photo save cannot be deleted through the gallery; camera is off 
   await page.waitForSelector('#preview-modal.show img');
   page.once('dialog', dialog => dialog.accept());
   await page.getByRole('button', { name: '删除此作品' }).click();
-  await page.waitForFunction(async () => (await MediaStore.list()).length === 0);
+  await waitForStoredCount(page, 0);
   await page.reload();
   await page.click('#btn-gallery');
   await page.waitForSelector('.gallery-empty');
@@ -951,7 +962,7 @@ test('a late save retry neither alters another pending preview nor reopens a clo
   await page.getByRole('button', { name: '重试存入本机', exact: true }).waitFor();
   const secondURL = await page.locator('#preview-modal img').getAttribute('src');
   await page.evaluate(() => window.completeRetrySave());
-  await page.waitForFunction(async () => (await MediaStore.list()).length === 1);
+  await waitForStoredCount(page, 1);
   assert.equal(await page.locator('#preview-modal img').getAttribute('src'), secondURL);
   assert.match(await page.locator('.preview-save-hint').textContent(), /尚未存入本机/);
   assert.equal(await page.getByRole('button', { name: '重试存入本机', exact: true }).isEnabled(), true);
@@ -961,7 +972,7 @@ test('a late save retry neither alters another pending preview nor reopens a clo
   await page.waitForFunction(() => window.retrySaveCalls === 4);
   await page.click('#preview-close');
   await page.evaluate(() => window.completeRetrySave());
-  await page.waitForFunction(async () => (await MediaStore.list()).length === 2);
+  await waitForStoredCount(page, 2);
   assert.equal(await page.locator('#preview-modal').evaluate(modal => modal.classList.contains('show')), false);
   assert.deepEqual(await retrySaveSnapshot(page, second.id), second);
 });
@@ -985,7 +996,7 @@ test('a stale album read cannot hide a work after its retry commits', async t =>
   await page.click('#btn-gallery');
   await page.waitForFunction(() => typeof window.completeStaleAlbum === 'function');
   await page.evaluate(() => window.completeRetrySave());
-  await page.waitForFunction(async () => (await MediaStore.list()).length === 1);
+  await waitForStoredCount(page, 1);
   await page.evaluate(() => window.completeStaleAlbum());
   await page.locator(`.gallery-item[data-id="${original.id}"]`).waitFor();
   assert.equal(await page.locator('.gallery-item').count(), 1);

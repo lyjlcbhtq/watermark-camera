@@ -9,6 +9,27 @@
     $('status').dataset.state = state;
   }
 
+  function resetSelection() {
+    // A result belongs to the exact pair selected when verification started.
+    // Invalidate it immediately, including any asynchronous work arriving late.
+    generation++;
+    const pending = controller;
+    controller = null;
+    pending?.abort();
+    $('file-fields').disabled = false;
+    $('verify-button').disabled = false;
+    $('cancel-button').hidden = true;
+    $('verify-progress').hidden = true;
+    $('verify-progress').value = 0;
+    $('details').hidden = true;
+    $('metadata').textContent = '';
+    setStatus($('media-file').files[0] && $('record-file').files[0]
+      ? '文件选择已改变，请重新核对。'
+      : '请选择媒体文件和对应的 JSON 校验记录。');
+  }
+
+  for (const id of ['media-file', 'record-file']) $(id).addEventListener('change', resetSelection);
+
   $('cancel-button').addEventListener('click', () => controller?.abort());
   $('verify-form').addEventListener('submit', async event => {
     event.preventDefault();

@@ -285,6 +285,44 @@ async function openStoredVideo(page) {
   await page.waitForSelector('#preview-modal.show video');
 }
 
+test('preview controls remain within the safe area on notched portrait and landscape screens', async t => {
+  const page = await setup(t);
+  await openStoredVideo(page);
+  const cdp = await page.context().newCDPSession(page);
+  const scenarios = [
+    { width: 320, height: 568, top: 0, left: 0, right: 0, bottom: 0 },
+    { width: 390, height: 844, top: 59, left: 0, right: 0, bottom: 34 },
+    { width: 568, height: 320, top: 0, left: 44, right: 0, bottom: 21 },
+    { width: 568, height: 320, top: 0, left: 0, right: 44, bottom: 21 },
+    { width: 844, height: 390, top: 0, left: 44, right: 44, bottom: 21 },
+  ];
+  for (const scenario of scenarios) {
+    const { width, height, ...insets } = scenario;
+    await page.setViewportSize({ width, height });
+    await cdp.send('Emulation.setSafeAreaInsetsOverride', { insets });
+    await page.evaluate(() => new Promise(requestAnimationFrame));
+    const controls = page.locator('.preview-header button, #preview-actions button');
+    for (let i = 0; i < await controls.count(); i++) {
+      const result = await controls.nth(i).evaluate(element => {
+        element.scrollIntoView({ block: 'center', inline: 'nearest' });
+        return { label: element.getAttribute('aria-label') || element.textContent.trim(),
+          ...element.getBoundingClientRect().toJSON() };
+      });
+      assert.ok(result.left >= insets.left - 1 && result.right <= width - insets.right + 1 &&
+        result.top >= insets.top - 1 && result.bottom <= height - insets.bottom + 1,
+      `${width}x${height}: ${result.label} is within the usable safe area: ${JSON.stringify(result)}`);
+    }
+    await page.evaluate(() => {
+      document.querySelector('#preview-modal').requestFullscreen = async () => { throw new Error('Use in-page fullscreen'); };
+      document.querySelector('#preview-modal video').webkitEnterFullscreen = undefined;
+    });
+    await page.click('#preview-fullscreen');
+    const exit = await page.locator('#preview-fullscreen-exit').boundingBox();
+    assert.ok(exit.x >= insets.left && exit.x + exit.width <= width - insets.right + 1 && exit.y >= insets.top);
+    await page.click('#preview-fullscreen-exit');
+  }
+});
+
 test('video fullscreen fills portrait and landscape when native APIs are unavailable, and Escape returns to actions', async t => {
   const page = await setup(t);
   await openStoredVideo(page);

@@ -233,3 +233,73 @@ test('verify page rejects invalid JSON and displays matching user metadata as un
   await page.waitForFunction(() => document.querySelector('#status').dataset.state === 'mismatch');
   assert.match(await page.locator('#status').textContent(), /不一致/);
 });
+
+test('changing or clearing either selected file clears the previous verification result and details', async t => {
+  const page = await browserPage(t, true);
+  const original = Buffer.from('original recording');
+  const changed = Buffer.from(original); changed[0] ^= 1;
+  const selectMedia = bytes => page.locator('#media-file').setInputFiles({ name: 'clip.mp4', mimeType: 'video/mp4', buffer: bytes });
+  const selectRecord = bytes => page.locator('#record-file').setInputFiles({ name: 'record.json', mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify({ ...fixture(bytes), captureMetadata: { vehicle: 'test vehicle' } })) });
+  const assertReset = async () => {
+    assert.equal(await page.locator('#status').getAttribute('data-state'), '');
+    assert.equal(await page.locator('#details').isVisible(), false);
+    assert.equal(await page.locator('#metadata').textContent(), '');
+    assert.equal(await page.locator('#verify-button').isEnabled(), true);
+  };
+  await selectMedia(original);
+  await selectRecord(original);
+  await page.click('#verify-button');
+  await page.waitForFunction(() => document.querySelector('#status').dataset.state === 'match');
+  assert.equal(await page.locator('#details').isVisible(), true);
+  await selectMedia(changed);
+  await assertReset();
+  await page.click('#verify-button');
+  await page.waitForFunction(() => document.querySelector('#status').dataset.state === 'mismatch');
+  await selectRecord(changed);
+  await assertReset();
+  await page.click('#verify-button');
+  await page.waitForFunction(() => document.querySelector('#status').dataset.state === 'match');
+  await page.locator('#record-file').setInputFiles([]);
+  await assertReset();
+  await selectRecord(changed);
+  await page.click('#verify-button');
+  await page.waitForFunction(() => document.querySelector('#status').dataset.state === 'match');
+  await page.locator('#media-file').setInputFiles([]);
+  await assertReset();
+});
+
+test('changing selection cancels the pending verification and late results cannot replace the new result', async t => {
+  const page = await browserPage(t, true);
+  // Control completion separately from cancellation to exercise stale asynchronous
+  // results even when a platform operation cannot be interrupted immediately.
+  await page.evaluate(() => {
+    const original = window.Evidence;
+    window.pendingVerifications = [];
+    window.Evidence = { ...original, verifyFile: (_blob, _record, options) => new Promise(resolve => {
+      window.pendingVerifications.push({ resolve, signal: options.signal, progress: options.onProgress });
+    }) };
+  });
+  const bytes = Buffer.from('original recording');
+  await page.locator('#media-file').setInputFiles({ name: 'old.mp4', mimeType: 'video/mp4', buffer: bytes });
+  await page.locator('#record-file').setInputFiles({ name: 'old.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(fixture(bytes))) });
+  await page.click('#verify-button');
+  await page.waitForFunction(() => window.pendingVerifications.length === 1);
+  await page.locator('#media-file').setInputFiles({ name: 'new.mp4', mimeType: 'video/mp4', buffer: Buffer.from('different file') });
+  assert.equal(await page.evaluate(() => window.pendingVerifications[0].signal.aborted), true);
+  assert.equal(await page.locator('#status').getAttribute('data-state'), '');
+  assert.equal(await page.locator('#details').isVisible(), false);
+  await page.click('#verify-button');
+  await page.waitForFunction(() => window.pendingVerifications.length === 2);
+  await page.evaluate(() => window.pendingVerifications[1].resolve({ matches: false }));
+  await page.waitForFunction(() => document.querySelector('#status').dataset.state === 'mismatch');
+  const currentMessage = await page.locator('#status').textContent();
+  await page.evaluate(async () => {
+    window.pendingVerifications[0].progress({ progress: 1 });
+    window.pendingVerifications[0].resolve({ matches: true });
+    await Promise.resolve();
+  });
+  assert.equal(await page.locator('#status').getAttribute('data-state'), 'mismatch');
+  assert.equal(await page.locator('#status').textContent(), currentMessage);
+  assert.equal(await page.locator('#verify-button').isEnabled(), true);
+});
