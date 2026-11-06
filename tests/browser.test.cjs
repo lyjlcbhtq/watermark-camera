@@ -264,10 +264,10 @@ test('app shell, manifest and icons load offline under a GitHub Pages subpath', 
   await page.waitForFunction(() => navigator.serviceWorker.controller !== null);
   const keys = await page.evaluate(async () => {
     const registration = await navigator.serviceWorker.ready;
-    const name = `watermark-camera-shell-${encodeURIComponent(registration.scope)}-v12`;
+    const name = `watermark-camera-shell-${encodeURIComponent(registration.scope)}-v13`;
     return (await (await caches.open(name)).keys()).map(request => request.url);
   });
-  const expectedShell = ['index.html', 'media-store.js', 'manifest.json', 'icon.svg',
+  const expectedShell = ['index.html', 'media-store.js', 'video-thumbnails.js', 'manifest.json', 'icon.svg',
     'icons/apple-touch-icon.png', 'icons/icon-192.png', 'icons/icon-512.png',
     'location-service.js', 'evidence.js', 'evidence-worker.js', 'verify.html', 'verify.js',
     'vendor/noble-hashes/sha2.js', 'vendor/noble-hashes/_md.js',

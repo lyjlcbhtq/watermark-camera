@@ -1,8 +1,8 @@
 // Bump this version whenever an app-shell file changes.
 // CacheStorage is shared by every app on an origin, including separate Pages paths.
 const CACHE_PREFIX = 'watermark-camera-shell-' + encodeURIComponent(self.registration.scope) + '-';
-const CACHE_NAME = CACHE_PREFIX + 'v12';
-const APP_SHELL = ['index.html', 'media-store.js', 'location-service.js', 'evidence.js', 'evidence-worker.js', 'verify.html', 'verify.js', 'vendor/noble-hashes/sha2.js', 'vendor/noble-hashes/_md.js', 'vendor/noble-hashes/_u64.js', 'vendor/noble-hashes/utils.js', 'manifest.json', 'icon.svg', 'icons/apple-touch-icon.png', 'icons/icon-192.png', 'icons/icon-512.png'];
+const CACHE_NAME = CACHE_PREFIX + 'v13';
+const APP_SHELL = ['index.html', 'media-store.js', 'video-thumbnails.js', 'location-service.js', 'evidence.js', 'evidence-worker.js', 'verify.html', 'verify.js', 'vendor/noble-hashes/sha2.js', 'vendor/noble-hashes/_md.js', 'vendor/noble-hashes/_u64.js', 'vendor/noble-hashes/utils.js', 'manifest.json', 'icon.svg', 'icons/apple-touch-icon.png', 'icons/icon-192.png', 'icons/icon-512.png'];
 const shellURL = name => new URL(name, self.registration.scope).href;
 
 self.addEventListener('install', event => {

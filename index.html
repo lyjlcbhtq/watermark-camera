@@ -122,11 +122,14 @@
     #gallery-panel { min-height: 55vh; }
     #gallery-status { display: flex; align-items: center; padding: 12px 14px; margin-bottom: 18px; border-radius: 12px; background: #eaf1e7; color: #5a705d; font-size: 12px; line-height: 1.65; }
     #gallery-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-    .gallery-item { position: relative; display: block; aspect-ratio: 1; overflow: hidden; border-radius: 12px; background: #e3ebe0; color: var(--accent); }
+    .gallery-item { position: relative; display: block; overflow: hidden; border-radius: 12px; background: #e3ebe0; color: var(--accent); text-align: left; }
+    .gallery-visual { display: block; position: relative; aspect-ratio: 1; overflow: hidden; }
     .gallery-item img { display: block; width: 100%; height: 100%; object-fit: cover; }
     .gallery-placeholder { display: flex; width: 100%; height: 100%; align-items: center; justify-content: center; }
     .gallery-placeholder .ui-icon { width: 30px; height: 30px; opacity: .6; }
     .media-type-badge { position: absolute; bottom: 6px; right: 6px; padding: 3px 6px; border-radius: 5px; color: #fff; background: rgba(22, 37, 28, .72); font-size: 9px; }
+    .gallery-caption { display: block; padding: 7px 5px; font-size: 10px; line-height: 1.3; text-align: center; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .gallery-pending { position: absolute; top: 6px; left: 6px; padding: 3px 5px; border-radius: 5px; font-size: 9px; color: #fff; background: #805d29; }
     .gallery-empty { grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 220px; padding: 36px 18px; text-align: center; }
     .gallery-empty > .ui-icon, .gallery-empty .big-icon { display: flex; align-items: center; justify-content: center; width: 64px; height: 64px; padding: 18px; border-radius: 22px; background: #e6eee1; color: #76976e; margin-bottom: 18px; }
     .gallery-empty .big-icon .ui-icon { width: 28px; height: 28px; }
@@ -459,6 +462,7 @@
 </div>
 
 <script src="./media-store.js"></script>
+<script src="./video-thumbnails.js"></script>
 <script src="./location-service.js"></script>
 <script src="./evidence.js"></script>
 <script>
@@ -566,7 +570,12 @@
   let galleryCursor = null;
   let galleryLoading = false;
   let galleryRetry = null;
-  let galleryURLs = [];
+  const galleryURLs = new Map();
+  const presentationCache = new Map();
+  const thumbnailQueue = new Map();
+  const thumbnailFailures = new Set();
+  let galleryObserver = null;
+  let thumbnailJob = null;
   let previewGeneration = 0;
   let previewURL = null;
   let sharing = false;
@@ -807,7 +816,7 @@
   function createCaptureContext(type) {
     const context = {
       id: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      type, appVersion: '1.7.1', processing: 'canvas-burned-watermark',
+      type, appVersion: '1.8.0', processing: 'canvas-burned-watermark',
       timeSource: 'device-clock-unverified', startedAtDeviceMs: Date.now(),
       timezoneOffsetMinutes: new Date().getTimezoneOffset(), monotonicStart: performance.now(),
       inspection: { ...inspection, source: 'user-entered-unverified' },
@@ -1271,6 +1280,12 @@
       }
     } catch (error) { session.failed = true; }
     session.chunks.length = 0;
+    // The helper synchronously copies a tiny frame before cleanup releases the
+    // recording canvas. Encoding this optional cover must never delay saving.
+    let coverPromise = null;
+    if (blob?.size && recordingCanvas) {
+      try { coverPromise = window.VideoThumbnails?.fromCanvas(recordingCanvas); } catch (_) { /* Optional cover. */ }
+    }
     cleanupRecording(session);
     releaseCamera();
     // 写入相册期间继续锁住快门，防止晚到的保存结果打断下一段录像。
@@ -1278,7 +1293,7 @@
     try {
       if (!blob?.size) {
         showToast('录制未完成，请重试');
-      } else if (await addCapturedMedia('video', blob, null, session.captureContext)) {
+      } else if (await addCapturedMedia('video', blob, null, session.captureContext, coverPromise)) {
         showToast(session.failed ? '录制中断，请检查已保留的片段' :
           session.audioInterrupted ? '录制完成，期间声音曾中断，请检查录音' :
           session.stopReason !== 'manual' ? '本段已自动结束，请检查成片；需要时继续下一段' : '录制完成');
@@ -1577,9 +1592,10 @@
       const page = await MediaStore.listPage({ before: reset ? null : galleryCursor, limit: 30 });
       if (generation !== galleryLoadGeneration) return;
       const current = new Map((reset ? [] : galleryItems).map(item => [item.id, item]));
-      page.items.forEach(item => current.set(item.id, item));
+      page.items.forEach(item => current.set(item.id, { ...item, ...presentationCache.get(item.id) }));
       pendingMedia.forEach(record => {
-        current.set(record.id, { id: record.id, type: record.type, timestamp: record.timestamp, size: record.blob.size, thumbnail: record.thumbnail });
+        current.set(record.id, { id: record.id, type: record.type, timestamp: record.timestamp, size: record.blob.size,
+          thumbnail: record.thumbnail, durationSeconds: record.durationSeconds });
       });
       galleryItems = [...current.values()].sort((a, b) => b.timestamp - a.timestamp || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
       galleryCursor = page.nextCursor;
@@ -1618,7 +1634,7 @@
     return attempt;
   }
 
-  async function addCapturedMedia(type, blob, thumbnail = null, captureContext = null) {
+  async function addCapturedMedia(type, blob, thumbnail = null, captureContext = null, coverPromise = null) {
     galleryLoadGeneration++;
     galleryLoading = false;
     const id = captureContext?.id || globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -1626,6 +1642,9 @@
     const item = { id, type, timestamp: record.timestamp, size: blob.size, thumbnail };
     pendingMedia.set(id, record);
     galleryItems.unshift(item);
+    if (coverPromise) Promise.resolve(coverPromise).then(cover => {
+      if (cover) return saveMediaPresentation(id, { thumbnail: cover });
+    }).catch(() => { /* An optional cover must not affect the original. */ });
     updateGalleryStatus();
     let stored = false;
     try {
@@ -1661,6 +1680,7 @@
     $('preview-modal').classList.remove('show');
     releasePreview();
     startCamera();
+    observeGalleryThumbnails();
   }
 
   function leaveFullscreenPreview(restoreFocus = true) {
@@ -1696,6 +1716,7 @@
   }
 
   async function showPreview(item, captured = null) {
+    pauseGalleryThumbnails();
     const generation = ++previewGeneration;
     const modal = $('preview-modal');
     const container = $('preview-media-container');
@@ -1715,6 +1736,11 @@
       if (item.type === 'video') {
         media.controls = true;
         media.playsInline = true;
+        media.addEventListener('loadedmetadata', () => {
+          if (validGalleryDuration(media.duration)) {
+            saveMediaPresentation(item.id, { durationSeconds: media.duration }).catch(() => {});
+          }
+        }, { once: true });
         $('preview-fullscreen').hidden = false;
         media.addEventListener('webkitendfullscreen', () => {
           if (generation === previewGeneration) leaveFullscreenPreview();
@@ -1748,6 +1774,8 @@
           galleryLoadGeneration++;
           galleryLoading = false;
           pendingMedia.delete(item.id);
+          presentationCache.delete(item.id);
+          thumbnailQueue.delete(item.id);
           galleryItems = galleryItems.filter(entry => entry.id !== item.id);
           updateGalleryStatus();
           if ($('gallery-panel').classList.contains('show')) updateGalleryGrid();
@@ -1905,10 +1933,171 @@
     showToast('已发起下载，请在浏览器下载列表或文件 App 中确认');
   }
 
+  function validGalleryDuration(value) {
+    return Number.isFinite(value) && value > 0 && value <= 24 * 60 * 60;
+  }
+
+  function durationLabel(value) {
+    if (!validGalleryDuration(value)) return '';
+    const total = Math.max(1, Math.floor(value));
+    return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+  }
+
+  async function saveMediaPresentation(id, fields) {
+    const data = {};
+    if (fields.thumbnail instanceof Blob) data.thumbnail = fields.thumbnail;
+    if (validGalleryDuration(fields.durationSeconds)) data.durationSeconds = fields.durationSeconds;
+    if (!Object.keys(data).length) return;
+    const cached = { ...presentationCache.get(id), ...data };
+    presentationCache.delete(id);
+    presentationCache.set(id, cached);
+    // At most two album pages of newly generated covers are retained in memory.
+    if (presentationCache.size > 60) presentationCache.delete(presentationCache.keys().next().value);
+    const pending = pendingMedia.get(id);
+    if (pending) Object.assign(pending, data);
+    const item = galleryItems.find(item => item.id === id);
+    if (item) {
+      Object.assign(item, data);
+      const button = [...$('gallery-grid').children].find(button => button.dataset.id === id);
+      if (button) renderGalleryCard(button, item);
+    }
+    // A pending put snapshots its metadata before its transaction finishes. Wait
+    // before patching presentation, otherwise its commit could erase the cover.
+    try { await pendingMediaWrites.get(id); } catch (_) { /* Keep pending cover for retry. */ }
+    if (pendingMedia.has(id)) return;
+    try {
+      if (!await MediaStore.updatePresentation(id, data)) presentationCache.delete(id);
+    } catch (_) { /* Album still shows its memory cover; original stays intact. */ }
+  }
+
+  function galleryThumbnailsWanted() {
+    return !document.hidden && $('gallery-panel').classList.contains('show') &&
+      !$('preview-modal').classList.contains('show') && !isRecording && !recordingStarting && !recordingFinishing && !isCapturing;
+  }
+
+  function pauseGalleryThumbnails() {
+    galleryObserver?.disconnect();
+    galleryObserver = null;
+    thumbnailQueue.clear();
+    thumbnailJob?.controller.abort();
+  }
+
+  async function pumpGalleryThumbnails() {
+    if (thumbnailJob || !galleryThumbnailsWanted() || !window.VideoThumbnails) return;
+    const id = thumbnailQueue.keys().next().value;
+    if (id === undefined) return;
+    thumbnailQueue.delete(id);
+    const item = galleryItems.find(item => item.id === id);
+    if (!item || item.thumbnail || thumbnailFailures.has(id)) { pumpGalleryThumbnails(); return; }
+    const job = { id, controller: new AbortController() };
+    thumbnailJob = job;
+    try {
+      const record = pendingMedia.get(id) || await MediaStore.get(id);
+      if (!record || job.controller.signal.aborted || !galleryThumbnailsWanted()) return;
+      const result = await VideoThumbnails.fromBlob(record.blob, { signal: job.controller.signal });
+      if (job.controller.signal.aborted || !galleryThumbnailsWanted()) return;
+      if (!result.thumbnail) thumbnailFailures.add(id);
+      await saveMediaPresentation(id, result);
+    } catch (_) {
+      if (!job.controller.signal.aborted) thumbnailFailures.add(id);
+    } finally {
+      if (thumbnailJob === job) thumbnailJob = null;
+      pumpGalleryThumbnails();
+    }
+  }
+
+  function queueGalleryThumbnail(button, visible) {
+    const id = button.dataset.id;
+    if (!visible) {
+      thumbnailQueue.delete(id);
+      if (thumbnailJob?.id === id) thumbnailJob.controller.abort();
+      return;
+    }
+    const item = galleryItems.find(item => item.id === id);
+    if (item?.type !== 'video' || item.thumbnail || thumbnailFailures.has(id) ||
+        (thumbnailJob?.id === id && !thumbnailJob.controller.signal.aborted)) return;
+    thumbnailQueue.set(id, true);
+    pumpGalleryThumbnails();
+  }
+
+  function scanVisibleGalleryThumbnails() {
+    if (galleryObserver || !galleryThumbnailsWanted()) return;
+    const bounds = $('gallery-panel').getBoundingClientRect();
+    for (const button of $('gallery-grid').querySelectorAll('.gallery-item')) {
+      const rect = button.getBoundingClientRect();
+      queueGalleryThumbnail(button, rect.bottom > Math.max(0, bounds.top) && rect.top < Math.min(innerHeight, bounds.bottom));
+    }
+  }
+
+  function observeGalleryThumbnails() {
+    galleryObserver?.disconnect();
+    galleryObserver = null;
+    thumbnailQueue.clear();
+    if (!galleryThumbnailsWanted()) return;
+    if (typeof window.IntersectionObserver === 'function') {
+      galleryObserver = new IntersectionObserver(entries => {
+        if (!galleryThumbnailsWanted()) return;
+        entries.forEach(entry => queueGalleryThumbnail(entry.target, entry.isIntersecting));
+      }, { root: $('gallery-panel'), threshold: 0 });
+      $('gallery-grid').querySelectorAll('.gallery-item').forEach(button => galleryObserver.observe(button));
+    } else scanVisibleGalleryThumbnails();
+  }
+
+  function renderGalleryCard(button, item) {
+    const previousURL = galleryURLs.get(item.id);
+    if (previousURL) URL.revokeObjectURL(previousURL);
+    galleryURLs.delete(item.id);
+    button.replaceChildren();
+    const date = new Date(item.timestamp);
+    const duration = item.type === 'video' ? durationLabel(item.durationSeconds) : '';
+    const label = item.type === 'photo' ? '照片' : '视频';
+    button.setAttribute('aria-label', `${label} ${date.toLocaleString()}${duration ? ` 时长 ${duration}` : ''}${pendingMedia.has(item.id) ? ' 待保存' : ''}`);
+    button.title = date.toLocaleString();
+    const visual = document.createElement('span');
+    visual.className = 'gallery-visual';
+    const placeholder = () => {
+      const node = document.createElement('span');
+      node.className = 'gallery-placeholder';
+      node.innerHTML = uiIcon(item.type === 'photo' ? 'image' : 'video');
+      return node;
+    };
+    if (item.thumbnail) {
+      const thumbnail = document.createElement('img');
+      const url = URL.createObjectURL(item.thumbnail);
+      galleryURLs.set(item.id, url);
+      thumbnail.src = url;
+      thumbnail.alt = item.type === 'photo' ? '照片缩略图' : '视频封面';
+      thumbnail.loading = 'lazy';
+      thumbnail.onerror = () => {
+        thumbnail.replaceWith(placeholder());
+        URL.revokeObjectURL(url);
+        if (galleryURLs.get(item.id) === url) galleryURLs.delete(item.id);
+      };
+      visual.appendChild(thumbnail);
+    } else visual.appendChild(placeholder());
+    const badge = document.createElement('span');
+    badge.className = 'media-type-badge';
+    badge.textContent = `${label}${duration ? ` · ${duration}` : ''}`;
+    visual.appendChild(badge);
+    if (pendingMedia.has(item.id)) {
+      const pending = document.createElement('span');
+      pending.className = 'gallery-pending';
+      pending.textContent = '待保存';
+      visual.appendChild(pending);
+    }
+    const caption = document.createElement('span');
+    caption.className = 'gallery-caption';
+    caption.textContent = date.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
+    button.append(visual, caption);
+  }
+
   function clearGalleryGrid() {
+    galleryObserver?.disconnect();
+    galleryObserver = null;
+    thumbnailQueue.clear();
     $('gallery-grid').replaceChildren();
     galleryURLs.forEach(url => URL.revokeObjectURL(url));
-    galleryURLs = [];
+    galleryURLs.clear();
   }
 
   function updateGalleryGrid() {
@@ -1923,25 +2112,7 @@
       const button = document.createElement('button');
       button.className = 'gallery-item';
       button.dataset.id = item.id;
-      button.setAttribute('aria-label', `${item.type === 'photo' ? '照片' : '视频'} ${new Date(item.timestamp).toLocaleString()}`);
-      if (item.thumbnail) {
-        const thumbnail = document.createElement('img');
-        const url = URL.createObjectURL(item.thumbnail);
-        galleryURLs.push(url);
-        thumbnail.src = url;
-        thumbnail.alt = item.type === 'photo' ? '照片缩略图' : '视频缩略图';
-        thumbnail.loading = 'lazy';
-        button.appendChild(thumbnail);
-      } else {
-        const placeholder = document.createElement('span');
-        placeholder.className = 'gallery-placeholder';
-        placeholder.innerHTML = uiIcon(item.type === 'photo' ? 'image' : 'video');
-        button.appendChild(placeholder);
-      }
-      const badge = document.createElement('span');
-      badge.className = 'media-type-badge';
-      badge.textContent = item.type === 'photo' ? '照片' : '视频';
-      button.appendChild(badge);
+      renderGalleryCard(button, item);
       button.onclick = () => showPreview(item);
       grid.appendChild(button);
     });
@@ -1953,6 +2124,7 @@
       more.onclick = () => loadGallery(galleryRetry ?? false);
       grid.appendChild(more);
     }
+    observeGalleryThumbnails();
   }
 
   // ==================== Shutter Action ====================
@@ -2000,6 +2172,7 @@
     if (restoreFocus) panelReturnFocus.get(id)?.focus({ preventScroll: true });
     panelReturnFocus.delete(id);
     if (id === 'gallery-panel') {
+      pauseGalleryThumbnails();
       galleryLoadGeneration++;
       galleryLoading = false;
       clearGalleryGrid();
@@ -2268,12 +2441,15 @@
     });
     loadGallery();
     $('camera-retry').addEventListener('click', () => startCamera());
+    $('gallery-panel').addEventListener('scroll', scanVisibleGalleryThumbnails, { passive: true });
+    $('gallery-panel').addEventListener('transitionend', scanVisibleGalleryThumbnails);
     startLocation();
     await startCamera();
     updateWatermarkOverlay();
   }
 
   function suspendCamera() {
+    pauseGalleryThumbnails();
     stopRecording('background');
     releaseCamera();
     $('preview-media-container').querySelector('video')?.pause();
@@ -2286,6 +2462,7 @@
   }
   function resumeCamera() {
     startCamera();
+    observeGalleryThumbnails();
     if (locationNeedsResume || locationService.getSnapshot().stale) startLocation();
   }
   document.addEventListener('visibilitychange', () => {
@@ -2295,6 +2472,7 @@
   window.addEventListener('pagehide', suspendCamera);
   window.addEventListener('pageshow', resumeCamera);
   window.addEventListener('resize', renderWatermarkPreview);
+  window.addEventListener('resize', scanVisibleGalleryThumbnails);
   video.addEventListener('resize', renderWatermarkPreview);
 
   init();

@@ -13,6 +13,15 @@
     return new DOMException(message, name);
   }
 
+  function validDuration(value) {
+    return Number.isFinite(value) && value > 0 && value <= 24 * 60 * 60;
+  }
+
+  function validThumbnail(value) {
+    return value instanceof Blob && value.size > 0 && value.size <= 128 * 1024 &&
+      ['image/jpeg', 'image/png', 'image/webp'].includes(value.type);
+  }
+
   function openDatabase() {
     if (database) return Promise.resolve(database);
     if (opening) return opening;
@@ -104,7 +113,8 @@
   async function put(record) {
     if (!record || typeof record.id !== 'string' || !record.id ||
         !['photo', 'video'].includes(record.type) || !Number.isFinite(record.timestamp) ||
-        !(record.blob instanceof Blob) || (record.thumbnail != null && !(record.thumbnail instanceof Blob))) {
+        !(record.blob instanceof Blob) || (record.thumbnail != null && !(record.thumbnail instanceof Blob)) ||
+        (record.durationSeconds !== undefined && !validDuration(record.durationSeconds))) {
       throw new TypeError('无效的作品记录');
     }
     const metadata = {
@@ -114,6 +124,7 @@
       size: record.blob.size,
     };
     if (record.thumbnail != null) metadata.thumbnail = record.thumbnail;
+    if (record.durationSeconds !== undefined) metadata.durationSeconds = record.durationSeconds;
     return transact(['media', 'metadata'], 'readwrite', transaction => {
       // Capture details belong with the original app-generated file, not album pages.
       const media = { id: record.id, blob: record.blob };
@@ -121,6 +132,40 @@
       transaction.objectStore('media').put(media);
       transaction.objectStore('metadata').put(metadata);
       return () => metadata;
+    });
+  }
+
+  async function updatePresentation(id, presentation) {
+    if (typeof id !== 'string' || !id || !presentation || typeof presentation !== 'object' ||
+        Array.isArray(presentation)) throw new TypeError('无效的作品封面信息');
+    // Snapshot the permitted fields before opening the database. This operation
+    // must never replace an original, its capture evidence, or its identity.
+    const { thumbnail, durationSeconds } = presentation;
+    if ((thumbnail === undefined && durationSeconds === undefined) ||
+        (thumbnail !== undefined && !validThumbnail(thumbnail)) ||
+        (durationSeconds !== undefined && !validDuration(durationSeconds))) {
+      throw new TypeError('无效的作品封面信息');
+    }
+    return transact(['metadata'], 'readwrite', transaction => {
+      const metadata = transaction.objectStore('metadata');
+      const request = metadata.get(id);
+      let updated = false;
+      request.onsuccess = () => {
+        // A delayed thumbnail must not recreate a work deleted in the meantime.
+        if (!request.result) return;
+        const next = { ...request.result };
+        if (thumbnail !== undefined) next.thumbnail = thumbnail;
+        if (durationSeconds !== undefined) next.durationSeconds = durationSeconds;
+        try {
+          metadata.put(next);
+          updated = true;
+        } catch (_) {
+          // A synchronous storage failure must reject the transaction without an
+          // uncaught event-handler error or changing the existing metadata.
+          try { transaction.abort(); } catch (_) { /* Already inactive. */ }
+        }
+      };
+      return () => updated;
     });
   }
 
@@ -180,5 +225,5 @@
     });
   }
 
-  window.MediaStore = Object.freeze({ put, list, listPage, get, remove });
+  window.MediaStore = Object.freeze({ put, updatePresentation, list, listPage, get, remove });
 })();

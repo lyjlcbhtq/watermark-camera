@@ -356,3 +356,135 @@ test('a blocked pagination upgrade rejects and can retry after the old tab close
   });
   assert.deepEqual(result, { errorName: 'InvalidStateError', ids: ['legacy-video', 'legacy-photo'], bytes: 'original photo' });
 });
+
+test('presentation updates persist only metadata and leave original bytes and capture evidence unchanged', async t => {
+  const { page } = await setup(t);
+  const result = await page.evaluate(async () => {
+    const original = new Blob(['original video bytes'], { type: 'video/mp4' });
+    const evidence = { id: 'original-capture', elapsedMs: 12345, location: { lat: 30.2, lng: 120.1 } };
+    await MediaStore.put({ id: 'video', type: 'video', timestamp: 123, blob: original, durationSeconds: 12.345, evidence });
+    const before = await MediaStore.get('video');
+    const transaction = IDBDatabase.prototype.transaction;
+    const scopes = [];
+    IDBDatabase.prototype.transaction = function (stores, mode, ...options) {
+      scopes.push({ stores: [...stores], mode });
+      return transaction.call(this, stores, mode, ...options);
+    };
+    let updated;
+    try {
+      updated = await MediaStore.updatePresentation('video', {
+        thumbnail: new Blob(['jpeg cover'], { type: 'image/jpeg' }), durationSeconds: 12.35,
+        id: 'wrong', type: 'photo', timestamp: 999, size: 1, evidence: { id: 'wrong' }, blob: new Blob(['replacement']),
+      });
+    } finally { IDBDatabase.prototype.transaction = transaction; }
+    const after = await MediaStore.get('video');
+    const hash = async blob => [...new Uint8Array(await crypto.subtle.digest('SHA-256', await blob.arrayBuffer()))]
+      .map(byte => byte.toString(16).padStart(2, '0')).join('');
+    return { updated, scopes, originalDuration: before.durationSeconds,
+      originalHash: await hash(before.blob), updatedHash: await hash(after.blob),
+      evidenceUnchanged: JSON.stringify(before.evidence) === JSON.stringify(after.evidence),
+      identity: { id: after.id, type: after.type, timestamp: after.timestamp, size: after.size },
+      metadataDuration: (await MediaStore.listPage({ limit: 1 })).items[0].durationSeconds,
+      version: (await indexedDB.databases())[0].version };
+  });
+  assert.equal(result.updated, true);
+  assert.deepEqual(result.scopes, [{ stores: ['metadata'], mode: 'readwrite' }]);
+  assert.equal(result.originalDuration, 12.345);
+  assert.equal(result.originalHash, result.updatedHash);
+  assert.equal(result.evidenceUnchanged, true);
+  assert.deepEqual(result.identity, { id: 'video', type: 'video', timestamp: 123, size: 20 });
+  assert.equal(result.metadataDuration, 12.35);
+  assert.equal(result.version, 2);
+  await page.reload();
+  assert.deepEqual(await page.evaluate(async () => {
+    const record = await MediaStore.get('video');
+    return { duration: record.durationSeconds, cover: await record.thumbnail.text(), mime: record.thumbnail.type,
+      bytes: await record.blob.text(), evidenceId: record.evidence.id };
+  }), { duration: 12.35, cover: 'jpeg cover', mime: 'image/jpeg', bytes: 'original video bytes', evidenceId: 'original-capture' });
+});
+
+test('partial presentation updates preserve existing metadata and a delayed update cannot restore deleted work', async t => {
+  const { page } = await setup(t);
+  const result = await page.evaluate(async () => {
+    await MediaStore.put({ id: 'video', type: 'video', timestamp: 7, blob: new Blob(['original']), durationSeconds: 10,
+      thumbnail: new Blob(['first cover'], { type: 'image/jpeg' }), evidence: { source: 'original' } });
+    const first = await MediaStore.updatePresentation('video', { thumbnail: new Blob(['new cover'], { type: 'image/webp' }) });
+    const afterCover = await MediaStore.get('video');
+    const second = await MediaStore.updatePresentation('video', { durationSeconds: 10.5 });
+    const afterDuration = await MediaStore.get('video');
+    // A user deletes the work while its previously started cover extraction runs.
+    await MediaStore.remove('video');
+    const late = await MediaStore.updatePresentation('video', { thumbnail: new Blob(['late cover'], { type: 'image/png' }), durationSeconds: 10.5 });
+    return { first, second, afterCoverDuration: afterCover.durationSeconds,
+      afterDurationCover: await afterDuration.thumbnail.text(), afterDuration: afterDuration.durationSeconds,
+      late, missing: (await MediaStore.get('video')) === undefined, items: await MediaStore.list() };
+  });
+  assert.deepEqual(result, { first: true, second: true, afterCoverDuration: 10, afterDurationCover: 'new cover',
+    afterDuration: 10.5, late: false, missing: true, items: [] });
+});
+
+test('presentation update failures reject and preserve the previous cover, duration and original', async t => {
+  const { page } = await setup(t);
+  const result = await page.evaluate(async () => {
+    await MediaStore.put({ id: 'video', type: 'video', timestamp: 1, blob: new Blob(['safe original']), durationSeconds: 8,
+      thumbnail: new Blob(['safe cover'], { type: 'image/jpeg' }), evidence: { id: 'safe evidence' } });
+    const originalPut = IDBObjectStore.prototype.put;
+    const errors = [];
+    const states = [];
+    for (const failure of ['abort', 'throw']) {
+      IDBObjectStore.prototype.put = function (...args) {
+        if (this.name === 'metadata' && failure === 'throw') throw new DOMException('Disk unavailable', 'QuotaExceededError');
+        const request = originalPut.apply(this, args);
+        if (this.name === 'metadata') request.addEventListener('success', () => this.transaction.abort(), { once: true });
+        return request;
+      };
+      try { await MediaStore.updatePresentation('video', { thumbnail: new Blob(['replacement'], { type: 'image/jpeg' }), durationSeconds: 20 }); errors.push('resolved'); }
+      catch (error) { errors.push(error.name); }
+      finally { IDBObjectStore.prototype.put = originalPut; }
+      const record = await MediaStore.get('video');
+      states.push({ cover: await record.thumbnail.text(), duration: record.durationSeconds,
+        bytes: await record.blob.text(), evidence: record.evidence });
+    }
+    const recovered = await MediaStore.updatePresentation('video', { durationSeconds: 8.5 });
+    return { errors, states, recovered, duration: (await MediaStore.get('video')).durationSeconds };
+  });
+  assert.deepEqual(result.errors, ['AbortError', 'AbortError']);
+  assert.deepEqual(result.states, Array(2).fill({ cover: 'safe cover', duration: 8, bytes: 'safe original', evidence: { id: 'safe evidence' } }));
+  assert.equal(result.recovered, true);
+  assert.equal(result.duration, 8.5);
+});
+
+test('presentation input bounds reject invalid data without changing work and accept small supported covers', async t => {
+  const { page } = await setup(t);
+  const result = await page.evaluate(async () => {
+    const record = { id: 'video', type: 'video', timestamp: 1, blob: new Blob(['original']) };
+    await MediaStore.put(record);
+    const invalid = [undefined, null, [], {}, { thumbnail: null }, { thumbnail: 'image' },
+      { thumbnail: new Blob([], { type: 'image/jpeg' }) }, { thumbnail: new Blob(['bytes'], { type: 'video/mp4' }) },
+      { thumbnail: new Blob([new Uint8Array(128 * 1024 + 1)], { type: 'image/jpeg' }) },
+      ...[null, 0, -1, NaN, Infinity, '5', 86400.001].map(durationSeconds => ({ durationSeconds }))];
+    const errors = [];
+    for (const value of invalid) {
+      try { await MediaStore.updatePresentation('video', value); errors.push('resolved'); }
+      catch (error) { errors.push(error.name); }
+    }
+    for (const id of ['', null, 1]) {
+      try { await MediaStore.updatePresentation(id, { durationSeconds: 5 }); errors.push('resolved'); }
+      catch (error) { errors.push(error.name); }
+    }
+    for (const durationSeconds of [null, 0, -1, NaN, Infinity, '5', 86400.001]) {
+      try { await MediaStore.put({ ...record, durationSeconds }); errors.push('resolved'); }
+      catch (error) { errors.push(error.name); }
+    }
+    const untouched = await MediaStore.list();
+    const accepted = [];
+    for (const type of ['image/jpeg', 'image/png', 'image/webp']) {
+      accepted.push(await MediaStore.updatePresentation('video', { thumbnail: new Blob([new Uint8Array(128 * 1024)], { type }), durationSeconds: 86400 }));
+    }
+    return { errors, untouched, accepted };
+  });
+  assert.equal(result.errors.length, 26);
+  assert.ok(result.errors.every(name => name === 'TypeError'));
+  assert.deepEqual(result.untouched, [{ id: 'video', type: 'video', timestamp: 1, size: 8 }]);
+  assert.deepEqual(result.accepted, [true, true, true]);
+});

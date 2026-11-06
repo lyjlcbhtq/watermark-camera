@@ -212,7 +212,7 @@ test('trusted loopback proxy separates clients while the global quota still limi
 
 test('production headers permit the local verification module worker and its vendored imports', async t => {
   const { request, origin } = await setup(t);
-  for (const name of ['evidence.js', 'evidence-worker.js', 'verify.html', 'verify.js', 'location-service.js',
+  for (const name of ['video-thumbnails.js', 'evidence.js', 'evidence-worker.js', 'verify.html', 'verify.js', 'location-service.js',
     'vendor/noble-hashes/sha2.js', 'vendor/noble-hashes/_md.js', 'vendor/noble-hashes/_u64.js', 'vendor/noble-hashes/utils.js']) {
     const response = await request('/' + name);
     assert.equal(response.status, 200, name);

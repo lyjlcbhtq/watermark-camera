@@ -8,7 +8,7 @@ import { isIP } from 'node:net';
 
 // Only public application assets belong here. Never expose the repository root.
 export const PUBLIC_FILES = new Set([
-  'index.html', 'sw.js', 'manifest.json', 'icon.svg', 'media-store.js',
+  'index.html', 'sw.js', 'manifest.json', 'icon.svg', 'media-store.js', 'video-thumbnails.js',
   'location-service.js', 'evidence.js', 'evidence-worker.js', 'verify.html', 'verify.js',
   'vendor/noble-hashes/sha2.js', 'vendor/noble-hashes/_md.js', 'vendor/noble-hashes/_u64.js',
   'vendor/noble-hashes/utils.js', 'vendor/noble-hashes/LICENSE',
