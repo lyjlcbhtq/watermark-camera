@@ -7,7 +7,7 @@ const vm = require('node:vm');
 const source = fs.readFileSync(path.resolve(__dirname, '../sw.js'), 'utf8');
 const scope = 'https://example.test/watermark-camera/';
 const shell = ['index.html', 'media-store.js', 'location-service.js', 'evidence.js', 'evidence-worker.js', 'verify.html', 'verify.js', 'vendor/noble-hashes/sha2.js', 'vendor/noble-hashes/_md.js', 'vendor/noble-hashes/_u64.js', 'vendor/noble-hashes/utils.js', 'manifest.json', 'icon.svg', 'icons/apple-touch-icon.png', 'icons/icon-192.png', 'icons/icon-512.png'];
-const cacheName = (base = scope, version = 'v6') => `watermark-camera-shell-${encodeURIComponent(base)}-${version}`;
+const cacheName = (base = scope, version = 'v7') => `watermark-camera-shell-${encodeURIComponent(base)}-${version}`;
 
 function storage() {
   const entries = new Map();
@@ -51,10 +51,10 @@ function storage() {
   return { state, network, caches, fetch };
 }
 
-function worker(store, base = scope, version = 'v6') {
+function worker(store, base = scope, version = 'v7') {
   const handlers = new Map();
   const lifecycle = { skipWaiting: 0, claim: 0 };
-  vm.runInNewContext(source.replace("+ 'v6'", `+ '${version}'`), {
+  vm.runInNewContext(source.replace("+ 'v7'", `+ '${version}'`), {
     URL, Request,
     caches: store.caches,
     fetch: store.fetch,

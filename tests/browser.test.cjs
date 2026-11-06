@@ -253,7 +253,7 @@ test('app shell, manifest and icons load offline under a GitHub Pages subpath', 
   await page.waitForFunction(() => navigator.serviceWorker.controller !== null);
   const keys = await page.evaluate(async () => {
     const registration = await navigator.serviceWorker.ready;
-    const name = `watermark-camera-shell-${encodeURIComponent(registration.scope)}-v6`;
+    const name = `watermark-camera-shell-${encodeURIComponent(registration.scope)}-v7`;
     return (await (await caches.open(name)).keys()).map(request => request.url);
   });
   const expectedShell = ['index.html', 'media-store.js', 'manifest.json', 'icon.svg',
@@ -518,7 +518,7 @@ test('preview controls fit on a narrow iPhone viewport', async t => {
   assert.ok(layout.every(rect => rect.left >= 0 && rect.right <= 320 && rect.top >= 0 && rect.bottom <= 568));
 });
 
-test('small-screen recording keeps mode buttons, timer and the whole image separate', async t => {
+test('small-screen recording fills the viewport while keeping mode buttons and timer separate', async t => {
   const { page } = await setup(t, { portraitCamera: true });
   await page.setViewportSize({ width: 320, height: 568 });
   await ready(page);
@@ -533,10 +533,13 @@ test('small-screen recording keeps mode buttons, timer and the whole image separ
   assert.ok(layout.mode.height < 50, 'mode buttons stay on one line');
   assert.ok(layout.mode.left >= 0 && layout.mode.right <= 320);
   assert.ok(layout.top.bottom <= layout.timer.top);
-  assert.ok(layout.timer.bottom < layout.video.top);
-  assert.ok(layout.video.bottom < layout.mode.top);
+  assert.ok(layout.timer.bottom < layout.mode.top);
+  assert.ok(Math.abs(layout.video.width - 320) < 1 || Math.abs(layout.video.height - 568) < 1, 'camera fits the whole viewport');
+  assert.ok(layout.video.top >= -1 && layout.video.bottom <= 569, 'full frame is retained');
   assert.ok(layout.mode.bottom <= layout.bottom.top);
   assert.ok(layout.video.height >= 290, 'compact controls leave useful space for portrait framing');
+  // Give the static synthetic camera a real frame interval before stopping its encoder.
+  await page.waitForFunction(() => document.querySelector('#timer-display').textContent !== '00:00');
   await page.click('#shutter-btn');
   await page.waitForSelector('#preview-modal.show video');
 });
@@ -623,7 +626,7 @@ test('watermark preview matches all four exported corners and avoids controls in
     };
     const fill = CanvasRenderingContext2D.prototype.fillText;
     CanvasRenderingContext2D.prototype.fillText = function(text, x, y, ...args) {
-      const line = { text, x, y, font: this.font, alignment: this.textAlign, color: this.fillStyle };
+      const line = { text, x, y, font: this.font, fontSize: Number(this.font.match(/[\d.]+(?=px)/)[0]), width: this.measureText(text).width, alignment: this.textAlign, color: this.fillStyle };
       (this.canvas.id === 'watermark-preview' ? window.previewText : window.photoText).push(line);
       return fill.call(this, text, x, y, ...args);
     };
@@ -635,23 +638,24 @@ test('watermark preview matches all four exported corners and avoids controls in
     await page.setViewportSize(index % 2 ? { width: 844, height: 390 } : { width: 390, height: 844 });
     await page.waitForFunction(() => {
       const video = document.querySelector('#camera-preview').getBoundingClientRect();
-      const top = document.querySelector('#top-bar').getBoundingClientRect();
-      const mode = document.querySelector('#mode-bar').getBoundingClientRect();
-      return innerWidth > innerHeight
-        ? video.top >= Math.max(top.bottom, mode.bottom)
-        : video.top >= top.bottom && video.bottom <= mode.top;
+      return Math.abs(video.width - innerWidth) < 1 || Math.abs(video.height - innerHeight) < 1;
     });
     const layout = await page.evaluate(() => {
       const rect = id => { const r = document.getElementById(id).getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height, right: r.right, bottom: r.bottom }; };
-      return { video: rect('camera-preview'), watermark: rect('watermark-preview'), controls: rect('bottom-bar'), mode: rect('mode-bar'), text: window.previewText, size: [document.querySelector('#watermark-preview').width, document.querySelector('#watermark-preview').height] };
+      return { video: rect('camera-preview'), watermark: rect('watermark-preview'), top: rect('top-bar'), controls: rect('bottom-bar'), mode: rect('mode-bar'), text: window.previewText, size: [document.querySelector('#watermark-preview').width, document.querySelector('#watermark-preview').height] };
     });
     for (const property of ['x', 'y', 'width', 'height']) assert.ok(Math.abs(layout.video[property] - layout.watermark[property]) < 1);
-    if (index % 2) assert.ok(layout.video.right <= layout.controls.x);
-    else {
-      assert.ok(layout.video.bottom <= layout.mode.y);
-      assert.ok(layout.mode.bottom <= layout.controls.y);
-    }
+    if (!(index % 2)) assert.ok(layout.mode.bottom <= layout.controls.y);
     assert.ok(layout.text.length > 0);
+    const scale = layout.watermark.width / layout.size[0];
+    for (const line of layout.text) {
+      const left = layout.watermark.x + (line.x - (line.alignment === 'right' ? line.width : 0)) * scale;
+      const right = left + line.width * scale;
+      const top = layout.watermark.y + line.y * scale;
+      const bottom = top + line.fontSize * scale;
+      assert.ok(left >= 0 && right <= (index % 2 ? layout.controls.x : 390));
+      assert.ok(top >= layout.top.bottom && bottom < (index % 2 ? 390 : layout.mode.y));
+    }
     await page.evaluate(() => { window.photoText = []; });
     await page.click('#shutter-btn');
     await page.waitForSelector('#preview-modal.show img');
@@ -689,6 +693,7 @@ test('recording retains its output dimensions through rotation and pauses playba
   assert.equal(await page.locator('[data-quality="hd"]').isDisabled(), true);
   assert.equal(await page.locator('[data-quality="eco"]').getAttribute('aria-pressed'), 'true');
   await page.click('[data-close-panel="watermark-panel"]');
+  await page.waitForFunction(() => document.querySelector('#timer-display').textContent !== '00:00');
   await page.click('#shutter-btn');
   await page.waitForSelector('#preview-modal.show video');
   await page.locator('#preview-modal video').evaluate(video => video.play());
@@ -724,6 +729,7 @@ test('recording uses media timestamps and preserves source frames despite callba
     return window.drawnVideoFrames - before;
   });
   assert.equal(rendered, 24);
+  await page.waitForFunction(() => document.querySelector('#timer-display').textContent !== '00:00');
   await page.click('#shutter-btn');
   await page.waitForSelector('#preview-modal.show video');
 });
@@ -761,7 +767,7 @@ test('vehicle inspection details survive reload and export a locally verifiable 
   const { page } = await setup(t, { mode: 'default', geo: 'defer' });
   await ready(page);
   await page.evaluate(() => window.geoRequests[0].success({ timestamp: Date.now(), coords: { latitude: 30.25, longitude: 120.15, accuracy: 17 } }));
-  await page.waitForFunction(() => document.querySelector('#location-summary').textContent.includes('17m'));
+  await page.waitForFunction(() => document.querySelector('#location-summary').textContent.includes('17米'));
   await page.click('#btn-settings');
   await page.click('[data-stage="after"]');
   await page.fill('#vehicle-label', '浙A·TEST');

@@ -42,28 +42,32 @@
     .icon-definitions { position: absolute; width: 0; height: 0; overflow: hidden; pointer-events: none; }
     #app { position: relative; width: 100%; height: 100%; overflow: hidden; background: var(--camera); }
 
-    /* The preview and export share a frame; controls stay outside that frame. */
+    /* The live view uses the whole screen; capture always retains the full source frame. */
     #camera-container { position: absolute; inset: 0; overflow: hidden; background: var(--camera); }
-    #camera-container video, #watermark-preview { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 100%; height: 100%; border-radius: 8px; }
+    #camera-container video, #watermark-preview { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 100%; height: 100%; }
     #camera-container video { object-fit: contain; }
-    #watermark-overlay { position: absolute; inset: 0; pointer-events: none; }
+    #watermark-overlay { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
     #watermark-preview { pointer-events: none; }
     .watermark-corner { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); pointer-events: none; }
 
-    #top-bar { position: absolute; top: 0; left: 0; right: 0; z-index: 10; display: flex; align-items: center; gap: 8px; padding: calc(env(safe-area-inset-top, 0px) + 12px) 20px 8px; }
+    #top-bar { position: absolute; top: 0; left: 0; right: 0; z-index: 10; display: flex; align-items: center; gap: 8px; padding: calc(env(safe-area-inset-top, 0px) + 12px) 20px 8px; background: linear-gradient(#0009, transparent); text-shadow: 0 1px 3px #000; }
     .camera-brand { display: flex; align-items: center; gap: 10px; margin-right: auto; min-width: 0; }
+    .camera-brand > div { min-width: 0; }
     .brand-mark { display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; color: var(--camera-accent); border: 1px solid #536653; border-radius: 11px; }
     .brand-mark .ui-icon { width: 21px; height: 21px; }
     .brand-title { font-size: 16px; font-weight: 650; letter-spacing: .5px; white-space: nowrap; }
     #camera-quality { margin-top: 4px; color: var(--camera-muted); font-size: 10px; font-weight: 500; letter-spacing: .9px; white-space: nowrap; }
-    #location-summary { display: block; margin-top: 3px; min-height: 14px; background: transparent; color: #d7c7a2; font-size: 10px; line-height: 14px; text-align: left; white-space: nowrap; }
+    #location-summary { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; margin-top: 3px; min-height: 14px; background: transparent; color: #d7c7a2; font-size: 10px; line-height: 14px; text-align: left; white-space: nowrap; }
     #location-summary[data-precise="true"] { color: #bad6bb; }
     .top-btn { display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; flex-shrink: 0; border-radius: 50%; color: #dce6dc; background: #252d28; }
+    #btn-camera-fit { width: 44px; border-radius: 12px; font-size: 11px; line-height: 1.4; }
+    #camera-view-hint { position: absolute; z-index: 9; left: 20px; bottom: calc(env(safe-area-inset-bottom, 0px) + 158px); padding: 4px 8px; border-radius: 6px; background: #0008; color: #fff; font-size: 10px; pointer-events: none; }
+    #camera-view-hint[hidden] { display: none; }
     #mode-bar { position: absolute; bottom: calc(env(safe-area-inset-bottom, 0px) + 110px); left: 50%; transform: translateX(-50%); z-index: 10; display: flex; width: max-content; padding: 3px; gap: 4px; border-radius: 24px; background: #222b25; }
     .mode-btn { display: flex; align-items: center; justify-content: center; gap: 7px; min-width: 88px; height: 34px; padding: 0 18px; border-radius: 21px; color: #b3c1b5; background: transparent; font-size: 13px; font-weight: 600; white-space: nowrap; }
     .mode-btn .ui-icon { width: 16px; height: 16px; }
     .mode-btn.active { color: #263d2e; background: var(--camera-accent); }
-    #bottom-bar { position: absolute; bottom: 0; left: 0; right: 0; z-index: 10; display: flex; align-items: center; justify-content: space-between; padding: 12px 34px calc(env(safe-area-inset-bottom, 0px) + 16px); }
+    #bottom-bar { position: absolute; bottom: 0; left: 0; right: 0; z-index: 10; display: flex; align-items: center; justify-content: space-between; padding: 12px 34px calc(env(safe-area-inset-bottom, 0px) + 16px); background: linear-gradient(transparent, #000b); text-shadow: 0 1px 3px #000; }
     .bottom-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; width: 56px; height: 64px; color: #d0dbcf; background: transparent; font-size: 11px; letter-spacing: 1px; }
     .bottom-icon { width: 38px; height: 34px; display: flex; align-items: center; justify-content: center; border: 1px solid #506253; border-radius: 10px; }
     #btn-watermark-settings .bottom-icon { background: #29372d; border-color: #415a45; color: var(--camera-accent); }
@@ -143,6 +147,8 @@
     .preview-heading { margin-right: auto; font-size: 16px; font-weight: 650; }
     .preview-heading small { display: block; margin-top: 3px; color: var(--muted); font-size: 10px; font-weight: 400; }
     .preview-header > .ui-icon { width: 19px; height: 19px; color: #7f9c7d; }
+    #preview-fullscreen { display: flex; align-items: center; gap: 5px; min-height: 40px; padding: 8px 10px; border-radius: 12px; background: #e7ede3; color: var(--accent); font-size: 12px; white-space: nowrap; }
+    #preview-fullscreen[hidden], #preview-fullscreen-exit { display: none; }
     .preview-media { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; padding: 8px 20px; color: var(--muted); font-size: 14px; }
     .preview-media img, .preview-media video { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 12px; }
     .preview-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; flex-shrink: 0; padding: 18px 20px calc(env(safe-area-inset-bottom, 0px) + 20px); max-height: 48vh; overflow-y: auto; }
@@ -155,6 +161,11 @@
     .preview-actions .secondary { flex-direction: column; gap: 6px; min-height: 58px; padding: 12px 4px; font-size: 11px; font-weight: 500; white-space: nowrap; }
     .preview-save-hint { grid-column: 1 / -1; color: var(--muted); font-size: 11px; line-height: 1.65; text-align: center; }
     .preview-actions .evidence-action { grid-column: 1 / -1; min-height: 36px; padding: 8px; background: #e8eee4; color: var(--accent); font-size: 12px; }
+    #preview-modal.watch-fullscreen { background: #000; }
+    #preview-modal.watch-fullscreen .preview-header, #preview-modal.watch-fullscreen .preview-actions { display: none; }
+    #preview-modal.watch-fullscreen .preview-media { position: absolute; inset: 0; padding: 0; background: #000; }
+    #preview-modal.watch-fullscreen .preview-media video { width: 100%; height: 100%; border-radius: 0; object-fit: contain; }
+    #preview-modal.watch-fullscreen #preview-fullscreen-exit { display: flex; position: absolute; z-index: 2; top: calc(env(safe-area-inset-top, 0px) + 12px); right: calc(env(safe-area-inset-right, 0px) + 12px); align-items: center; gap: 5px; min-height: 44px; padding: 10px 14px; border-radius: 22px; color: #fff; background: #17231dcc; font-size: 13px; }
 
     #toast { position: fixed; bottom: calc(env(safe-area-inset-bottom, 0px) + 176px); left: 50%; transform: translate(-50%, 8px); z-index: 100; max-width: calc(100% - 40px); width: max-content; padding: 12px 18px; border: 1px solid #dbe5d6; border-radius: 14px; background: #f3f8ed; color: #38553c; font-size: 12px; line-height: 1.6; text-align: center; opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; }
     #toast.show { opacity: 1; transform: translate(-50%, 0); }
@@ -174,11 +185,12 @@
     @media (max-width: 350px) { #top-bar { padding-left: 16px; padding-right: 16px; } .brand-mark { display: none; } #bottom-bar { padding-left: 24px; padding-right: 24px; } .panel { padding-left: 16px; padding-right: 16px; } .setting-group { padding: 15px 13px; } .color-dot { width: 27px; height: 27px; } }
     @media (orientation: landscape) {
       #top-bar { right: calc(116px + env(safe-area-inset-right, 0px)); padding: 12px 16px 12px max(16px, env(safe-area-inset-left, 0px)); }
+      #camera-view-hint { left: max(16px, env(safe-area-inset-left, 0px)); bottom: 12px; }
       .camera-brand { gap: 0; }
       .brand-title, .brand-mark { display: none; }
       #camera-quality { font-size: 10px; }
       #mode-bar { top: 12px; bottom: auto; left: calc((100% - 116px - env(safe-area-inset-right, 0px)) / 2); }
-      #bottom-bar { top: 0; left: auto; width: calc(116px + env(safe-area-inset-right, 0px)); padding: 40px max(16px, env(safe-area-inset-right, 0px)) 12px 16px; flex-direction: column; justify-content: center; gap: 14px; }
+      #bottom-bar { top: 0; left: auto; width: calc(116px + env(safe-area-inset-right, 0px)); padding: 40px max(16px, env(safe-area-inset-right, 0px)) 12px 16px; flex-direction: column; justify-content: center; gap: 14px; background: linear-gradient(90deg, transparent, #000a); }
       .bottom-btn { height: 48px; gap: 4px; }
       .bottom-icon { height: 28px; }
       #recording-timer { top: 8px; left: auto; right: calc(16px + env(safe-area-inset-right, 0px)); transform: none; width: 84px; height: auto; min-height: 36px; padding: 4px; flex-wrap: wrap; justify-content: center; gap: 2px 5px; }
@@ -211,6 +223,7 @@
     <symbol id="icon-arrow-left" viewBox="0 0 24 24"><path d="m10 5-7 7 7 7M3 12h18"/></symbol>
     <symbol id="icon-leaf" viewBox="0 0 24 24"><path d="M20 3C10 2 3 7 4 14c1 8 16 8 16-11zM4 21l11-12"/></symbol>
     <symbol id="icon-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></symbol>
+    <symbol id="icon-expand" viewBox="0 0 24 24"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/></symbol>
   </defs>
 </svg>
 
@@ -264,9 +277,12 @@
       <span class="brand-mark"><svg class="ui-icon" aria-hidden="true"><use href="#icon-camera"/></svg></span>
       <div><div class="brand-title">车况留证</div><div id="camera-quality">720P · 省电</div><button id="location-summary" aria-label="刷新定位状态">正在定位</button></div>
     </div>
+    <button class="top-btn" id="btn-camera-fit" aria-label="铺满预览，仅预览裁边，原片保持完整" aria-pressed="false">铺满<br>预览</button>
     <button class="top-btn" id="btn-settings" aria-label="设置"><svg class="ui-icon" aria-hidden="true"><use href="#icon-sliders"/></svg></button>
     <button class="top-btn" id="btn-switch-camera" aria-label="切换摄像头"><svg class="ui-icon" aria-hidden="true"><use href="#icon-switch"/></svg></button>
   </div>
+
+  <div id="camera-view-hint" hidden>裁切预览 · 原片保留完整画面</div>
 
   <!-- 模式切换 -->
   <div id="mode-bar">
@@ -376,12 +392,13 @@
     <div class="setting-group" id="poi-section" style="display:none">
       <div class="setting-group-title">附近地点</div>
       <div class="setting-row">
-        <span class="setting-label">使用最近地点</span>
-        <button type="button" class="toggle" id="toggle-poi" aria-label="使用最近地点" aria-pressed="false"><span class="knob"></span></button>
+        <span class="setting-label">手选附近地点</span>
+        <button type="button" class="toggle" id="toggle-poi" aria-label="手选附近地点" aria-pressed="false"><span class="knob"></span></button>
       </div>
       <div class="setting-row" style="border-bottom:none;flex-direction:column;align-items:stretch;gap:6px;">
         <div id="poi-list" style="max-height:160px;overflow-y:auto;display:flex;flex-direction:column;gap:4px;"></div>
       </div>
+      <p class="setting-hint">默认显示中文地址和最近地点，也可从列表手选。附近地点仅供参考，请核对现场。</p>
     </div>
 
     <div class="setting-group">
@@ -441,10 +458,12 @@
     <div class="preview-header">
       <button class="preview-close" id="preview-close" aria-label="关闭预览"><svg class="ui-icon" aria-hidden="true"><use href="#icon-arrow-left"/></svg></button>
       <div class="preview-heading">作品预览<small>留住这一刻</small></div>
+      <button id="preview-fullscreen" type="button" hidden><svg class="ui-icon" aria-hidden="true"><use href="#icon-expand"/></svg>全屏观看</button>
       <svg class="ui-icon" aria-hidden="true"><use href="#icon-image"/></svg>
     </div>
     <div class="preview-media" id="preview-media-container"></div>
     <div class="preview-actions" id="preview-actions"></div>
+    <button id="preview-fullscreen-exit" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#icon-close"/></svg>退出全屏</button>
   </div>
 </div>
 
@@ -471,6 +490,7 @@
 
   // ==================== 状态 ====================
   let currentMode = 'video'; // 车况留证默认录像。
+  let cameraViewMode = 'fit'; // Only the live display can crop; exported frames remain complete.
   let isRecording = false;
   let useFrontCamera = false;
   let stream = null;
@@ -653,6 +673,10 @@
     return { lat: wgsLat+dlat, lng: wgsLng+dlng };
   }
   // ==================== 位置获取：短时高精度采样，地址仅作估算 ====================
+  // Existing browser-published AMap key, restored for this project's static Pages site.
+  // Other deployments continue to use their same-origin server and server-side key.
+  const pagesMapKey = 'b6045d9bbac9de8d8642a71580218562';
+  let addressPending = false;
   let locationController = null;
   const locationService = LocationService.create({ onUpdate: snapshot => {
     locationPending = snapshot.pending;
@@ -660,10 +684,11 @@
     const changed = currentLocation?.timestamp !== snapshot.timestamp || currentLocation?.lat !== snapshot.lat || currentLocation?.lng !== snapshot.lng;
     currentLocation = snapshot.lat === null ? null : { ...snapshot };
     if (!currentLocation) {
-      locationAddress = snapshot.error?.code === 'permission-denied' ? '定位被拒绝' : snapshot.pending ? '定位中' : '定位暂不可用';
+      locationAddress = '';
+      addressPending = false;
       window._geoSource = '';
     } else if (changed) {
-      locationAddress = `${snapshot.lat.toFixed(6)}, ${snapshot.lng.toFixed(6)}`;
+      locationAddress = '';
       window._geoSource = '';
     }
     if (activeCaptureContext && ['ready', 'error'].includes(snapshot.status)) {
@@ -692,12 +717,20 @@
       if (!navigator.onLine) return;
       const controller = new AbortController();
       locationController = controller;
+      addressPending = true;
+      updateWatermarkOverlay();
       const timeout = setTimeout(() => controller.abort(), 5000);
       try {
         const gcj = wgs84ToGcj02(snapshot.lat, snapshot.lng);
-        const url = new URL('./api/reverse-geocode', location.href);
-        url.searchParams.set('longitude', String(gcj.lng));
-        url.searchParams.set('latitude', String(gcj.lat));
+        const directMap = location.hostname === 'lyjlcbhtq.github.io';
+        const url = directMap ? new URL('https://restapi.amap.com/v3/geocode/regeo') : new URL('./api/reverse-geocode', location.href);
+        if (directMap) {
+          url.search = new URLSearchParams({ key: pagesMapKey, location: `${gcj.lng},${gcj.lat}`,
+            output: 'JSON', radius: '500', extensions: 'all' }).toString();
+        } else {
+          url.searchParams.set('longitude', String(gcj.lng));
+          url.searchParams.set('latitude', String(gcj.lat));
+        }
         const response = await fetch(url, { signal: controller.signal, cache: 'no-store' });
         const data = response.ok ? await response.json() : null;
         if (generation !== locationGeneration) return;
@@ -705,17 +738,27 @@
           const rg = data.regeocode;
           const ac = rg.addressComponent || {};
           const text = value => typeof value === 'string' ? value : '';
-          const parts = [text(ac.city), text(ac.district), text(ac.township), text(ac.streetNumber?.street) + text(ac.streetNumber?.number)];
+          const distance = value => {
+            if (typeof value !== 'number' && typeof value !== 'string') return null;
+            if (typeof value === 'string' && !value.trim()) return null;
+            const meters = Number(value);
+            return Number.isFinite(meters) && meters >= 0 ? meters : null;
+          };
+          const parts = [text(ac.province), text(ac.city), text(ac.district), text(ac.township), text(ac.streetNumber?.street) + text(ac.streetNumber?.number)];
           const address = text(rg.formatted_address) || parts.filter(Boolean).join(' ');
           if (address) { locationAddress = address.slice(0, 120); window._geoSource = '地图估算'; }
-          nearByPois = (Array.isArray(rg.pois) ? rg.pois : Array.isArray(rg.aois) ? rg.aois : []).slice(0, 20)
-            .map(p => ({ name: text(p.name), dist: p.distance, addr: p.address, type: p.type }));
+          nearByPois = (Array.isArray(rg.pois) ? rg.pois : Array.isArray(rg.aois) ? rg.aois : [])
+            .filter(p => p && text(p.name).trim())
+            .map(p => ({ name: text(p.name).slice(0, 80), dist: distance(p.distance),
+              addr: text(p.address).slice(0, 120), type: text(p.type) }))
+            .sort((a, b) => (a.dist ?? Infinity) - (b.dist ?? Infinity)).slice(0, 20);
         }
       } catch (_) { /* 坐标已可用；地址服务失败不阻断录像。 */ }
       finally {
         clearTimeout(timeout);
         if (generation === locationGeneration) {
           locationController = null;
+          addressPending = false;
           renderPoiList();
           updateWatermarkOverlay();
         }
@@ -732,15 +775,16 @@
   function positionDescription() {
     const fix = locationService.getSnapshot();
     if (fix.lat === null) return fix.pending ? '定位中' : fix.error?.code === 'permission-denied' ? '定位被拒绝' : '定位暂不可用';
-    const accuracy = fix.accuracy === null ? '精度未知' : `估计误差±${Math.ceil(fix.accuracy)}m`;
-    return `WGS84 ${fix.lat.toFixed(6)}, ${fix.lng.toFixed(6)} · ${accuracy}${fix.stale ? ' · 已过期' : ''}`;
+    const accuracy = fix.accuracy === null ? '精度未知' : `估计误差±${Math.ceil(fix.accuracy)}米`;
+    return `${accuracy}${fix.stale ? ' · 位置已过期' : ''}`;
   }
 
   function locationWatermarkText() {
     let label = '';
     if (wmState.useManualAddr) label = `手填地址（未核验）：${wmState.manualAddr || '未填写'}`;
     else if (wmState.usePoi && selectedPoi) label = `选定地点（未核验）：${selectedPoi}`;
-    else if (window._geoSource) label = `地图估算：${locationAddress}`;
+    else if (window._geoSource) label = `地图估算：${locationAddress}${nearByPois[0] ? `\n附近：${nearByPois[0].name}` : ''}`;
+    else if (currentLocation) label = addressPending ? '正在查询中文地址' : '中文地址暂不可用';
     return [label, positionDescription()].filter(Boolean).join('\n');
   }
 
@@ -749,8 +793,9 @@
     const age = fix.timestamp === null ? '' : ` · 采样于 ${new Date(fix.timestamp).toLocaleTimeString('zh-CN', { hour12: false })}（${Math.floor(fix.ageMs / 1000)}秒前）`;
     $('location-status-hint').textContent = locationWatermarkText() + age;
     const summary = $('location-summary');
-    const label = fix.lat === null ? positionDescription() : fix.stale ? '位置已过期 · 点此更新' :
-      fix.accuracy === null ? '定位精度未知 · 点此更新' : `定位估计±${Math.ceil(fix.accuracy)}m${fix.pending ? ' · 优化中' : ''}`;
+    const quality = fix.accuracy === null ? '精度未知' : `±${Math.ceil(fix.accuracy)}米`;
+    const place = window._geoSource ? (wmState.usePoi && selectedPoi ? selectedPoi : nearByPois[0]?.name || locationAddress) : addressPending ? '查询中文地址中' : '中文地址暂不可用';
+    const label = fix.lat === null ? positionDescription() : fix.stale ? '位置已过期 · 点此更新' : `${place} · ${quality}${fix.pending ? ' · 优化中' : ''}`;
     if (summary.textContent !== label) summary.textContent = label;
     summary.setAttribute('aria-label', `${label}，点击刷新定位`);
     summary.dataset.precise = String(fix.lat !== null && !fix.stale && fix.accuracy !== null && fix.accuracy <= 30);
@@ -761,13 +806,15 @@
     return { ...locationService.getSnapshot(), address: locationAddress || null,
       addressSource: window._geoSource ? 'map-estimate' : null,
       manualAddress: wmState.useManualAddr ? wmState.manualAddr : null,
-      selectedPlace: wmState.usePoi ? selectedPoi : null, authenticated: false };
+      selectedPlace: wmState.usePoi ? selectedPoi : null,
+      nearbyPlace: nearByPois[0] ? { name: nearByPois[0].name, distanceMeters: nearByPois[0].dist, source: 'map-nearby' } : null,
+      authenticated: false };
   }
 
   function createCaptureContext(type) {
     const context = {
       id: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      type, appVersion: '1.5.0', processing: 'canvas-burned-watermark',
+      type, appVersion: '1.6.0', processing: 'canvas-burned-watermark',
       timeSource: 'device-clock-unverified', startedAtDeviceMs: Date.now(),
       timezoneOffsetMinutes: new Date().getTimezoneOffset(), monotonicStart: performance.now(),
       inspection: { ...inspection, source: 'user-entered-unverified' },
@@ -813,8 +860,8 @@
     section.style.display = 'block';
     list.replaceChildren();
     nearByPois.forEach((p, i) => {
-      const dist = parseInt(p.dist) || 0;
-      const distText = dist > 1000 ? (dist/1000).toFixed(1)+'km' : dist+'m';
+      const dist = p.dist;
+      const distText = dist === null ? '距离未知' : dist > 1000 ? (dist/1000).toFixed(1)+'公里' : Math.round(dist)+'米';
       const button = document.createElement('button');
       button.className = `poi-item ${selectedPoi === p.name ? 'active' : ''}`;
       button.dataset.idx = i;
@@ -972,29 +1019,50 @@
     };
   }
 
-  function renderWatermarkPreview() {
-    if (!stream || document.hidden || video.readyState < 2 || !video.videoWidth) return;
-    const size = recordingCanvas && isRecording
-      ? { width: recordingCanvas.width, height: recordingCanvas.height } : captureSize();
+  function previewFrame(width, height) {
     const stage = $('camera-container').getBoundingClientRect();
+    const scale = cameraViewMode === 'fill'
+      ? Math.max(stage.width / width, stage.height / height)
+      : Math.min(stage.width / width, stage.height / height);
+    return { stage, scale, left: (stage.width - width * scale) / 2,
+      top: (stage.height - height * scale) / 2, width: width * scale, height: height * scale };
+  }
+
+  function watermarkBounds(width, height) {
+    // Use the same visible safe rectangle when drawing both the preview and the file.
+    // This keeps time/address readable under the floating controls, even in crop preview.
+    const frame = previewFrame(width, height);
+    const { stage, scale } = frame;
+    if (!scale || !Number.isFinite(scale)) return { left: 0, top: 0, width, height };
     const topBar = $('top-bar').getBoundingClientRect();
     const modeBar = $('mode-bar').getBoundingClientRect();
     const bottomBar = $('bottom-bar').getBoundingClientRect();
     const landscape = stage.width > stage.height;
     const timerBottom = !landscape && timerEl.classList.contains('show') ? timerEl.getBoundingClientRect().bottom : 0;
-    const top = (landscape ? Math.max(topBar.bottom, modeBar.bottom) : Math.max(topBar.bottom, timerBottom)) - stage.top + 8;
-    const left = landscape ? Math.max(8, parseFloat(getComputedStyle($('top-bar')).paddingLeft)) : 8;
-    const right = landscape ? bottomBar.left - stage.left - 8 : stage.width - 8;
-    const bottom = landscape ? stage.height - 8 : Math.min(modeBar.top, bottomBar.top) - stage.top - 12;
-    const availableWidth = Math.max(1, right - left);
-    const availableHeight = Math.max(1, bottom - top);
-    const ratio = Math.min(availableWidth / size.width, availableHeight / size.height);
+    const safeTop = (landscape ? Math.max(topBar.bottom, modeBar.bottom) : Math.max(topBar.bottom, timerBottom)) - stage.top + 10;
+    const safeLeft = Math.max(10, parseFloat(getComputedStyle($('top-bar')).paddingLeft));
+    const safeRight = landscape ? bottomBar.left - stage.left - 10 : stage.width - 10;
+    let safeBottom = landscape ? stage.height - 10 : Math.min(modeBar.top, bottomBar.top) - stage.top - 10;
+    if (!$('camera-view-hint').hidden) safeBottom = Math.min(safeBottom, $('camera-view-hint').getBoundingClientRect().top - stage.top - 6);
+    const clamp = (value, maximum) => Math.max(0, Math.min(maximum, value));
+    const left = clamp((safeLeft - frame.left) / scale, width - 1);
+    const top = clamp((safeTop - frame.top) / scale, height - 1);
+    const right = clamp((safeRight - frame.left) / scale, width);
+    const bottom = clamp((safeBottom - frame.top) / scale, height);
+    return { left, top, width: Math.max(1, right - left), height: Math.max(1, bottom - top) };
+  }
+
+  function renderWatermarkPreview() {
+    if (!stream || document.hidden || video.readyState < 2 || !video.videoWidth) return;
+    const size = recordingCanvas && isRecording
+      ? { width: recordingCanvas.width, height: recordingCanvas.height } : captureSize();
+    const frame = previewFrame(size.width, size.height);
     const layer = $('watermark-preview');
     for (const element of [video, layer]) {
-      element.style.left = `${left + availableWidth / 2}px`;
-      element.style.top = `${top + availableHeight / 2}px`;
-      element.style.width = `${size.width * ratio}px`;
-      element.style.height = `${size.height * ratio}px`;
+      element.style.left = `${frame.stage.width / 2}px`;
+      element.style.top = `${frame.stage.height / 2}px`;
+      element.style.width = `${frame.width}px`;
+      element.style.height = `${frame.height}px`;
     }
     if (layer.width !== size.width || layer.height !== size.height) {
       layer.width = size.width;
@@ -1009,7 +1077,7 @@
   }
 
   function watermarkKey() {
-    return `${wmState.showTime ? Math.floor(Date.now() / 1000) : ''}:${wmState.showDate ? formatDate() : ''}:${watermarkRevision}`;
+    return `${wmState.showTime ? Math.floor(Date.now() / 1000) : ''}:${wmState.showDate ? formatDate() : ''}:${watermarkRevision}:${innerWidth}x${innerHeight}:${cameraViewMode}:${isRecording}`;
   }
 
   function drawVideoFrame(ctx, width, height) {
@@ -1023,6 +1091,7 @@
   }
 
   function drawWatermarkOnCanvas(ctx, width, height) {
+    const bounds = watermarkBounds(width, height);
     const entries = [`${inspection.stage === 'after' ? '交车后' : '接车前'} · 车况记录`];
     if (inspection.vehicle) entries.push(`车辆（手填）：${inspection.vehicle}`);
     if (inspection.order) entries.push(`订单尾号（手填）：${inspection.order}`);
@@ -1047,14 +1116,14 @@
       for (const entry of entries) {
         let line = '';
         for (const character of Array.from(entry)) {
-          if (character === '\n' || (line && ctx.measureText(line + character).width > width - padding * 2)) {
+          if (character === '\n' || (line && ctx.measureText(line + character).width > bounds.width - padding * 2)) {
             lines.push(line);
             line = character === '\n' ? '' : character;
           } else line += character;
         }
         if (line) lines.push(line);
       }
-      if (lines.length * lineHeight + padding * 2 <= height || fontSize <= 8) break;
+      if (lines.length * lineHeight + padding * 2 <= bounds.height || fontSize <= 8) break;
       fontSize--;
     } while (true);
     const colorMap = { white: '#ffffff', yellow: '#ffd700', red: '#ff3b30', blue: '#5ac8fa', green: '#34c759', orange: '#ff9500' };
@@ -1065,8 +1134,8 @@
     ctx.shadowOffsetX = ctx.shadowOffsetY = 1;
     const right = wmState.position.endsWith('r');
     ctx.textAlign = right ? 'right' : 'left';
-    const x = right ? width - padding : padding;
-    const y = wmState.position.startsWith('b') ? height - padding - lines.length * lineHeight : padding;
+    const x = bounds.left + (right ? bounds.width - padding : padding);
+    const y = bounds.top + (wmState.position.startsWith('b') ? bounds.height - padding - lines.length * lineHeight : padding);
     lines.forEach((line, index) => ctx.fillText(line, x, y + index * lineHeight));
     ctx.restore();
   }
@@ -1511,6 +1580,8 @@
   }
 
   function releasePreview() {
+    leaveFullscreenPreview(false);
+    $('preview-fullscreen').hidden = true;
     evidenceExportController?.abort();
     evidenceExportController = null;
     const container = $('preview-media-container');
@@ -1530,6 +1601,38 @@
     startCamera();
   }
 
+  function leaveFullscreenPreview(restoreFocus = true) {
+    const modal = $('preview-modal');
+    modal.classList.remove('watch-fullscreen');
+    const media = $('preview-media-container').querySelector('video');
+    if (media?.webkitDisplayingFullscreen) {
+      try { media.webkitExitFullscreen?.(); } catch (_) { /* Native player may already be closing. */ }
+    }
+    if (document.fullscreenElement === modal) {
+      try { Promise.resolve(document.exitFullscreen()).catch(() => {}); } catch (_) { /* Page may be suspending. */ }
+    }
+    if (restoreFocus && modal.classList.contains('show') && !$('preview-fullscreen').hidden) $('preview-fullscreen').focus({ preventScroll: true });
+  }
+
+  async function enterFullscreenPreview() {
+    const modal = $('preview-modal');
+    const media = $('preview-media-container').querySelector('video');
+    if (!media) return;
+    const generation = previewGeneration;
+    modal.classList.add('watch-fullscreen');
+    $('preview-fullscreen-exit').focus({ preventScroll: true });
+    // iPhone video fullscreen must be entered directly in this user gesture.
+    if (typeof media.webkitEnterFullscreen === 'function') {
+      try { media.webkitEnterFullscreen(); return; } catch (_) { /* Use the page player until native playback is ready. */ }
+    }
+    if (typeof modal.requestFullscreen === 'function') {
+      try {
+        await modal.requestFullscreen();
+        if (generation !== previewGeneration || !modal.classList.contains('show')) leaveFullscreenPreview(false);
+      } catch (_) { /* The same screen-filling in-page player remains available in standalone Safari. */ }
+    }
+  }
+
   async function showPreview(item, captured = null) {
     const generation = ++previewGeneration;
     const modal = $('preview-modal');
@@ -1547,7 +1650,14 @@
       container.replaceChildren();
       const media = document.createElement(item.type === 'photo' ? 'img' : 'video');
       media.src = previewURL;
-      if (item.type === 'video') { media.controls = true; media.playsInline = true; }
+      if (item.type === 'video') {
+        media.controls = true;
+        media.playsInline = true;
+        $('preview-fullscreen').hidden = false;
+        media.addEventListener('webkitendfullscreen', () => {
+          if (generation === previewGeneration) leaveFullscreenPreview();
+        });
+      }
       else media.alt = '水印照片';
       container.appendChild(media);
       const addButton = (text, style, icon, handler) => {
@@ -1998,7 +2108,8 @@
     const dialog = ['preview-modal', 'gallery-panel', 'watermark-panel'].map($).find(element => element.classList.contains('show'));
     if (dialog) {
       if (e.key === 'Escape') {
-        if (dialog.id === 'preview-modal') closePreview();
+        if (dialog.id === 'preview-modal' && dialog.classList.contains('watch-fullscreen')) leaveFullscreenPreview();
+        else if (dialog.id === 'preview-modal') closePreview();
         else hidePanel(dialog.id);
         e.preventDefault();
       } else if (e.key === 'Tab') {
@@ -2020,6 +2131,20 @@
   // ==================== 启动 ====================
   async function init() {
     initSettings();
+    $('btn-camera-fit').addEventListener('click', () => {
+      cameraViewMode = cameraViewMode === 'fit' ? 'fill' : 'fit';
+      const fill = cameraViewMode === 'fill';
+      $('btn-camera-fit').innerHTML = fill ? '完整<br>画面' : '铺满<br>预览';
+      $('btn-camera-fit').setAttribute('aria-pressed', String(fill));
+      $('btn-camera-fit').setAttribute('aria-label', fill ? '查看完整画面' : '铺满预览，仅预览裁边，原片保持完整');
+      $('camera-view-hint').hidden = !fill;
+      renderWatermarkPreview();
+    });
+    $('preview-fullscreen').addEventListener('click', enterFullscreenPreview);
+    $('preview-fullscreen-exit').addEventListener('click', () => leaveFullscreenPreview());
+    document.addEventListener('fullscreenchange', () => {
+      if (!document.fullscreenElement && $('preview-modal').classList.contains('watch-fullscreen')) leaveFullscreenPreview();
+    });
     loadGallery();
     $('camera-retry').addEventListener('click', () => startCamera());
     startLocation();
