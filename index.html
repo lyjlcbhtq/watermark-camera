@@ -40,7 +40,7 @@
     input { min-width: 0; -webkit-user-select: text; user-select: text; }
     .ui-icon { width: 22px; height: 22px; display: inline-block; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; vertical-align: middle; }
     .icon-definitions { position: absolute; width: 0; height: 0; overflow: hidden; pointer-events: none; }
-    #app { position: relative; width: 100%; height: 100%; overflow: hidden; background: var(--camera); }
+    #app { position: relative; width: 100%; height: 100%; height: 100dvh; overflow: hidden; background: var(--camera); }
 
     /* The live view uses the whole screen; capture always retains the full source frame. */
     #camera-container { position: absolute; inset: 0; overflow: hidden; background: var(--camera); }
@@ -50,34 +50,25 @@
     #watermark-preview { pointer-events: none; }
     .watermark-corner { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); pointer-events: none; }
 
-    #top-bar { position: absolute; top: 0; left: 0; right: 0; z-index: 10; display: flex; align-items: center; gap: 8px; padding: calc(env(safe-area-inset-top, 0px) + 12px) 20px 8px; background: linear-gradient(#0009, transparent); text-shadow: 0 1px 3px #000; }
-    .camera-brand { display: flex; align-items: center; gap: 10px; margin-right: auto; min-width: 0; }
-    .camera-brand > div { min-width: 0; }
-    .brand-mark { display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; color: var(--camera-accent); border: 1px solid #536653; border-radius: 11px; }
-    .brand-mark .ui-icon { width: 21px; height: 21px; }
-    .brand-title { font-size: 16px; font-weight: 650; letter-spacing: .5px; white-space: nowrap; }
-    #camera-quality { margin-top: 4px; color: var(--camera-muted); font-size: 10px; font-weight: 500; letter-spacing: .9px; white-space: nowrap; }
-    #location-summary { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; margin-top: 3px; min-height: 14px; background: transparent; color: #d7c7a2; font-size: 10px; line-height: 14px; text-align: left; white-space: nowrap; }
-    #location-summary[data-precise="true"] { color: #bad6bb; }
-    .top-btn { display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; flex-shrink: 0; border-radius: 50%; color: #dce6dc; background: #252d28; }
-    #btn-camera-fit { width: 44px; border-radius: 12px; font-size: 11px; line-height: 1.4; }
-    #camera-view-hint { position: absolute; z-index: 9; left: 20px; bottom: calc(env(safe-area-inset-bottom, 0px) + 158px); padding: 4px 8px; border-radius: 6px; background: #0008; color: #fff; font-size: 10px; pointer-events: none; }
-    #camera-view-hint[hidden] { display: none; }
+    #top-bar { position: absolute; top: 0; left: 0; right: 0; z-index: 10; display: flex; align-items: center; justify-content: flex-end; padding: calc(env(safe-area-inset-top, 0px) + 12px) max(20px, env(safe-area-inset-right, 0px)) 8px; background: linear-gradient(#0005, transparent); }
+    #camera-quality { margin-bottom: 12px; color: var(--muted); font-size: 13px; font-weight: 500; line-height: 1.6; }
+    #location-summary { display: block; width: 100%; min-height: 44px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px; background: #f5f7f2; color: #766744; font-size: 13px; line-height: 1.6; text-align: left; overflow-wrap: anywhere; }
+    #location-summary[data-precise="true"] { color: var(--accent); }
+    .top-btn { display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; flex-shrink: 0; border-radius: 50%; color: #f3f5ef; background: #101512a6; }
     #mode-bar { position: absolute; bottom: calc(env(safe-area-inset-bottom, 0px) + 110px); left: 50%; transform: translateX(-50%); z-index: 10; display: flex; width: max-content; padding: 3px; gap: 4px; border-radius: 24px; background: #222b25; }
     .mode-btn { display: flex; align-items: center; justify-content: center; gap: 7px; min-width: 88px; height: 34px; padding: 0 18px; border-radius: 21px; color: #b3c1b5; background: transparent; font-size: 13px; font-weight: 600; white-space: nowrap; }
     .mode-btn .ui-icon { width: 16px; height: 16px; }
     .mode-btn.active { color: #263d2e; background: var(--camera-accent); }
     #bottom-bar { position: absolute; bottom: 0; left: 0; right: 0; z-index: 10; display: flex; align-items: center; justify-content: space-between; padding: 12px 34px calc(env(safe-area-inset-bottom, 0px) + 16px); background: linear-gradient(transparent, #000b); text-shadow: 0 1px 3px #000; }
-    .bottom-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; width: 56px; height: 64px; color: #d0dbcf; background: transparent; font-size: 11px; letter-spacing: 1px; }
-    .bottom-icon { width: 38px; height: 34px; display: flex; align-items: center; justify-content: center; border: 1px solid #506253; border-radius: 10px; }
-    #btn-watermark-settings .bottom-icon { background: #29372d; border-color: #415a45; color: var(--camera-accent); }
+    .bottom-btn { display: flex; align-items: center; justify-content: center; width: 48px; height: 48px; color: #f3f5ef; background: #101512a6; border-radius: 50%; }
+    .bottom-icon { width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; }
     #shutter-btn { position: relative; display: flex; align-items: center; justify-content: center; width: 76px; height: 76px; flex-shrink: 0; border-radius: 50%; border: 2px solid #e8f0e3; background: transparent; }
     #shutter-btn .inner { width: 62px; height: 62px; border-radius: 50%; background: #e8f0e3; transition: transform .15s, border-radius .15s; }
     #shutter-btn:active .inner { transform: scale(.9); }
     #shutter-btn.video-mode .inner { background: #d7776c; }
     #shutter-btn.recording { border-color: #ef9b8f; }
     #shutter-btn.recording .inner { width: 28px; height: 28px; border-radius: 7px; background: #ed8b7d; }
-    #recording-timer { display: none; position: absolute; top: calc(env(safe-area-inset-top, 0px) + 82px); left: 50%; transform: translateX(-50%); z-index: 10; align-items: center; gap: 7px; height: 24px; padding: 0 11px; border-radius: 8px; background: #3c2825; color: #ffc2b8; font-size: 12px; font-variant-numeric: tabular-nums; letter-spacing: 1px; }
+    #recording-timer { display: none; position: absolute; top: calc(env(safe-area-inset-top, 0px) + 18px); left: 50%; transform: translateX(-50%); z-index: 10; align-items: center; gap: 7px; height: 32px; padding: 0 11px; border-radius: 16px; background: #3c2825e6; color: #ffc2b8; font-size: 12px; font-variant-numeric: tabular-nums; letter-spacing: 1px; }
     #recording-audio-status { font-size: 10px; letter-spacing: 0; }
     #recording-timer.show { display: flex; }
     #recording-timer .dot { width: 5px; height: 5px; border-radius: 50%; background: #f29b8b; }
@@ -182,17 +173,11 @@
     .panel::-webkit-scrollbar { width: 3px; }
     .panel::-webkit-scrollbar-thumb { background: #c9d5c5; border-radius: 3px; }
     @media (min-width: 600px) { .panel { max-width: 500px; margin: 0 auto; padding-left: 24px; padding-right: 24px; } }
-    @media (max-width: 350px) { #top-bar { padding-left: 16px; padding-right: 16px; } .brand-mark { display: none; } #bottom-bar { padding-left: 24px; padding-right: 24px; } .panel { padding-left: 16px; padding-right: 16px; } .setting-group { padding: 15px 13px; } .color-dot { width: 27px; height: 27px; } }
+    @media (max-width: 350px) { #top-bar { padding-left: 16px; padding-right: 16px; } #bottom-bar { padding-left: 24px; padding-right: 24px; } .panel { padding-left: 16px; padding-right: 16px; } .setting-group { padding: 15px 13px; } .color-dot { width: 27px; height: 27px; } }
     @media (orientation: landscape) {
       #top-bar { right: calc(116px + env(safe-area-inset-right, 0px)); padding: 12px 16px 12px max(16px, env(safe-area-inset-left, 0px)); }
-      #camera-view-hint { left: max(16px, env(safe-area-inset-left, 0px)); bottom: 12px; }
-      .camera-brand { gap: 0; }
-      .brand-title, .brand-mark { display: none; }
-      #camera-quality { font-size: 10px; }
       #mode-bar { top: 12px; bottom: auto; left: calc((100% - 116px - env(safe-area-inset-right, 0px)) / 2); }
       #bottom-bar { top: 0; left: auto; width: calc(116px + env(safe-area-inset-right, 0px)); padding: 40px max(16px, env(safe-area-inset-right, 0px)) 12px 16px; flex-direction: column; justify-content: center; gap: 14px; background: linear-gradient(90deg, transparent, #000a); }
-      .bottom-btn { height: 48px; gap: 4px; }
-      .bottom-icon { height: 28px; }
       #recording-timer { top: 8px; left: auto; right: calc(16px + env(safe-area-inset-right, 0px)); transform: none; width: 84px; height: auto; min-height: 36px; padding: 4px; flex-wrap: wrap; justify-content: center; gap: 2px 5px; }
       #recording-audio-status { flex-basis: 100%; text-align: center; line-height: 11px; }
       .panel { max-height: calc(100vh - 12px); max-height: calc(100dvh - 12px); }
@@ -273,21 +258,13 @@
 
   <!-- 顶部栏 -->
   <div id="top-bar">
-    <div class="camera-brand">
-      <span class="brand-mark"><svg class="ui-icon" aria-hidden="true"><use href="#icon-camera"/></svg></span>
-      <div><div class="brand-title">车况留证</div><div id="camera-quality">720P · 省电</div><button id="location-summary" aria-label="刷新定位状态">正在定位</button></div>
-    </div>
-    <button class="top-btn" id="btn-camera-fit" aria-label="铺满预览，仅预览裁边，原片保持完整" aria-pressed="false">铺满<br>预览</button>
     <button class="top-btn" id="btn-settings" aria-label="设置"><svg class="ui-icon" aria-hidden="true"><use href="#icon-sliders"/></svg></button>
-    <button class="top-btn" id="btn-switch-camera" aria-label="切换摄像头"><svg class="ui-icon" aria-hidden="true"><use href="#icon-switch"/></svg></button>
   </div>
-
-  <div id="camera-view-hint" hidden>裁切预览 · 原片保留完整画面</div>
 
   <!-- 模式切换 -->
   <div id="mode-bar">
-    <button class="mode-btn" data-mode="photo" aria-label="拍照模式"><svg class="ui-icon" aria-hidden="true"><use href="#icon-camera"/></svg>拍照</button>
-    <button class="mode-btn active" data-mode="video" aria-label="录像模式"><svg class="ui-icon" aria-hidden="true"><use href="#icon-video"/></svg>录像</button>
+    <button class="mode-btn" data-mode="photo" aria-label="拍照模式">拍照</button>
+    <button class="mode-btn active" data-mode="video" aria-label="录像模式">录像</button>
   </div>
 
   <!-- 录像计时器 -->
@@ -299,11 +276,11 @@
 
   <!-- 底部控制 -->
   <div id="bottom-bar">
-    <button class="bottom-btn" id="btn-gallery" aria-label="相册"><span class="bottom-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-image"/></svg></span><span>相册</span></button>
+    <button class="bottom-btn" id="btn-gallery" aria-label="相册"><span class="bottom-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-image"/></svg></span></button>
     <button id="shutter-btn" class="video-mode" aria-label="开始录像">
       <div class="inner"></div>
     </button>
-    <button class="bottom-btn" id="btn-watermark-settings" aria-label="水印"><span class="bottom-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-sliders"/></svg></span><span>水印</span></button>
+    <button class="bottom-btn" id="btn-switch-camera" aria-label="切换摄像头"><span class="bottom-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-switch"/></svg></span></button>
   </div>
 
   <!-- Toast -->
@@ -317,6 +294,15 @@
       <button type="button" class="panel-close" data-close-panel="watermark-panel" aria-label="完成水印设置">完成</button>
       <div class="panel-title">车况留证设置</div>
       <p class="panel-subtitle">先拍全貌，再拍已有损伤；每段最长 3 分钟</p>
+    </div>
+
+    <div class="setting-group">
+      <div class="setting-group-title">取景显示</div>
+      <div class="setting-row">
+        <span class="setting-label">预览方式</span>
+        <button class="setting-action-btn" id="btn-camera-fit" aria-label="完整画面，点击铺满预览" aria-pressed="false">完整画面</button>
+      </div>
+      <p class="setting-hint quality-hint" id="camera-view-hint">完整画面保留所有取景边缘；也可点按切换为铺满预览。保存的原文件始终保留完整画面。</p>
     </div>
 
     <div class="setting-group">
@@ -339,6 +325,7 @@
 
     <div class="setting-group">
       <div class="setting-group-title"><svg class="ui-icon" aria-hidden="true"><use href="#icon-camera"/></svg>拍摄画质</div>
+      <p id="camera-quality">720P · 省电</p>
       <div class="option-group" id="quality-options">
         <button class="option-btn active" data-quality="eco" aria-pressed="true"><span class="quality-name">省电 <small>720p</small></span><span class="quality-detail">日常记录，轻盈省心</span></button>
         <button class="option-btn" data-quality="hd" aria-pressed="false"><span class="quality-name">清晰 <small>1080p</small></span><span class="quality-detail">保留更多画面细节</span></button>
@@ -372,6 +359,7 @@
 
     <div class="setting-group">
       <div class="setting-group-title"><svg class="ui-icon" aria-hidden="true"><use href="#icon-location"/></svg>位置设置</div>
+      <button id="location-summary" aria-label="刷新定位状态">正在定位</button>
       <div class="setting-row">
         <span class="setting-label">手动输入地址</span>
         <button type="button" class="toggle" id="toggle-manual-addr" aria-label="手动输入地址" aria-pressed="false"><span class="knob"></span></button>
@@ -814,7 +802,7 @@
   function createCaptureContext(type) {
     const context = {
       id: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      type, appVersion: '1.6.0', processing: 'canvas-burned-watermark',
+      type, appVersion: '1.6.1', processing: 'canvas-burned-watermark',
       timeSource: 'device-clock-unverified', startedAtDeviceMs: Date.now(),
       timezoneOffsetMinutes: new Date().getTimezoneOffset(), monotonicStart: performance.now(),
       inspection: { ...inspection, source: 'user-entered-unverified' },
@@ -1042,8 +1030,7 @@
     const safeTop = (landscape ? Math.max(topBar.bottom, modeBar.bottom) : Math.max(topBar.bottom, timerBottom)) - stage.top + 10;
     const safeLeft = Math.max(10, parseFloat(getComputedStyle($('top-bar')).paddingLeft));
     const safeRight = landscape ? bottomBar.left - stage.left - 10 : stage.width - 10;
-    let safeBottom = landscape ? stage.height - 10 : Math.min(modeBar.top, bottomBar.top) - stage.top - 10;
-    if (!$('camera-view-hint').hidden) safeBottom = Math.min(safeBottom, $('camera-view-hint').getBoundingClientRect().top - stage.top - 6);
+    const safeBottom = landscape ? stage.height - 10 : Math.min(modeBar.top, bottomBar.top) - stage.top - 10;
     const clamp = (value, maximum) => Math.max(0, Math.min(maximum, value));
     const left = clamp((safeLeft - frame.left) / scale, width - 1);
     const top = clamp((safeTop - frame.top) / scale, height - 1);
@@ -1888,7 +1875,7 @@
   // ==================== 初始化设置面板交互 ====================
   function syncAccessibility() {
     const locked = isRecording || recordingFinishing;
-    $('watermark-panel').querySelectorAll('input, button:not([data-close-panel]):not(#btn-refresh-location)').forEach(control => { control.disabled = locked; });
+    $('watermark-panel').querySelectorAll('input, button:not([data-close-panel]):not(#btn-refresh-location):not(#location-summary):not(#btn-camera-fit)').forEach(control => { control.disabled = locked; });
     document.querySelectorAll('.toggle').forEach(button => {
       button.setAttribute('aria-pressed', String(button.classList.contains('on')));
     });
@@ -2058,7 +2045,6 @@
     });
 
     // 面板开关
-    $('btn-watermark-settings').addEventListener('click', () => showPanel('watermark-panel'));
     $('watermark-panel-overlay').addEventListener('click', () => hidePanel('watermark-panel'));
     document.querySelectorAll('[data-close-panel]').forEach(button => {
       button.addEventListener('click', () => hidePanel(button.dataset.closePanel));
@@ -2134,10 +2120,10 @@
     $('btn-camera-fit').addEventListener('click', () => {
       cameraViewMode = cameraViewMode === 'fit' ? 'fill' : 'fit';
       const fill = cameraViewMode === 'fill';
-      $('btn-camera-fit').innerHTML = fill ? '完整<br>画面' : '铺满<br>预览';
+      $('btn-camera-fit').textContent = fill ? '铺满预览' : '完整画面';
       $('btn-camera-fit').setAttribute('aria-pressed', String(fill));
-      $('btn-camera-fit').setAttribute('aria-label', fill ? '查看完整画面' : '铺满预览，仅预览裁边，原片保持完整');
-      $('camera-view-hint').hidden = !fill;
+      $('btn-camera-fit').setAttribute('aria-label', fill ? '铺满预览，点击查看完整画面' : '完整画面，点击铺满预览');
+      $('camera-view-hint').textContent = fill ? '铺满预览会裁去屏幕外的边缘，保存的原文件仍保留完整画面。' : '完整画面保留所有取景边缘；也可点按切换为铺满预览。保存的原文件始终保留完整画面。';
       renderWatermarkPreview();
     });
     $('preview-fullscreen').addEventListener('click', enterFullscreenPreview);

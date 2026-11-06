@@ -66,6 +66,41 @@ async function setup(t) {
   return page;
 }
 
+async function changePreviewFraming(page) {
+  await page.click('#btn-settings');
+  await page.click('#btn-camera-fit');
+  await page.click('[data-close-panel="watermark-panel"]');
+}
+
+test('home keeps common capture controls and settings retain framing, quality and location', async t => {
+  const page = await setup(t);
+  for (const viewport of [{ width: 320, height: 568 }, { width: 390, height: 844 }, { width: 844, height: 390 }]) {
+    await page.setViewportSize(viewport);
+    assert.equal(await page.locator('#top-bar button:visible').count(), 1);
+    assert.equal(await page.locator('#bottom-bar button:visible').count(), 3);
+    assert.equal(await page.locator('#bottom-bar #btn-switch-camera').isVisible(), true);
+    assert.equal(await page.locator('#btn-camera-fit').isVisible(), false);
+    assert.equal(await page.locator('#location-summary').isVisible(), false);
+    await page.click('#btn-settings');
+    for (const selector of ['#btn-camera-fit', '#camera-quality', '#location-summary', '#quality-options', '#toggle-location']) {
+      assert.equal(await page.locator(selector).isVisible(), true, `${selector} remains available in settings`);
+    }
+    await page.click('[data-close-panel="watermark-panel"]');
+    assert.equal(await page.locator('#btn-settings').evaluate(button => document.activeElement === button), true);
+    const controls = await page.locator('#top-bar button, #bottom-bar button, #mode-bar button').evaluateAll(elements => elements.map(element => {
+      const b = element.getBoundingClientRect(); return { x: b.x, y: b.y, right: b.right, bottom: b.bottom };
+    }));
+    assert.ok(controls.every(b => b.x >= 0 && b.y >= 0 && b.right <= viewport.width && b.bottom <= viewport.height));
+  }
+  const oldStream = await page.locator('#camera-preview').evaluate(video => {
+    window.previousViewTrack = video.srcObject.getVideoTracks()[0]; return video.srcObject.id;
+  });
+  await page.click('#btn-switch-camera');
+  await page.waitForFunction(previous => document.querySelector('#camera-preview').srcObject?.id !== previous &&
+    document.querySelector('#camera-preview').readyState >= 2, oldStream);
+  assert.equal(await page.evaluate(() => window.previousViewTrack.readyState), 'ended');
+});
+
 test('camera uses the whole viewport; crop preview keeps watermark visible and preserves every captured edge', async t => {
   const page = await setup(t);
   for (const viewport of [{ width: 320, height: 568 }, { width: 390, height: 844 }, { width: 844, height: 390 }]) {
@@ -77,9 +112,9 @@ test('camera uses the whole viewport; crop preview keeps watermark visible and p
     const frame = await page.locator('#camera-preview').boundingBox();
     assert.ok(frame.x >= -1 && frame.y >= -1);
     assert.ok(Math.abs(frame.width - viewport.width) < 1 || Math.abs(frame.height - viewport.height) < 1);
-    await page.click('#btn-camera-fit');
+    await changePreviewFraming(page);
     assert.equal(await page.locator('#btn-camera-fit').getAttribute('aria-pressed'), 'true');
-    assert.match(await page.locator('#camera-view-hint').textContent(), /裁切预览.*原片/);
+    assert.match(await page.locator('#camera-view-hint').textContent(), /铺满预览.*裁.*原文件.*完整画面/);
     const layout = await page.evaluate(() => {
       const rect = selector => document.querySelector(selector).getBoundingClientRect().toJSON();
       const layer = document.querySelector('#watermark-preview');
@@ -105,10 +140,10 @@ test('camera uses the whole viewport; crop preview keeps watermark visible and p
     }));
     assert.ok(buttons.every(box => box.left >= 0 && box.top >= 0 && box.right <= viewport.width && box.bottom <= viewport.height));
     if (process.env.FULLSCREEN_SCREENSHOTS) await page.screenshot({ path: `${process.env.FULLSCREEN_SCREENSHOTS}/fill-${viewport.width}x${viewport.height}.png` });
-    await page.click('#btn-camera-fit');
+    await changePreviewFraming(page);
   }
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.click('#btn-camera-fit');
+  await changePreviewFraming(page);
   await page.click('[data-mode="photo"]');
   await page.click('#shutter-btn');
   await page.waitForFunction(() => document.querySelector('#preview-modal img')?.naturalWidth > 0);

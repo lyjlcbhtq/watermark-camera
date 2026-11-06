@@ -253,7 +253,7 @@ test('app shell, manifest and icons load offline under a GitHub Pages subpath', 
   await page.waitForFunction(() => navigator.serviceWorker.controller !== null);
   const keys = await page.evaluate(async () => {
     const registration = await navigator.serviceWorker.ready;
-    const name = `watermark-camera-shell-${encodeURIComponent(registration.scope)}-v7`;
+    const name = `watermark-camera-shell-${encodeURIComponent(registration.scope)}-v8`;
     return (await (await caches.open(name)).keys()).map(request => request.url);
   });
   const expectedShell = ['index.html', 'media-store.js', 'manifest.json', 'icon.svg',
@@ -527,12 +527,14 @@ test('small-screen recording fills the viewport while keeping mode buttons and t
   await page.waitForSelector('#recording-timer.show');
   const layout = await page.evaluate(() => {
     const rect = selector => document.querySelector(selector).getBoundingClientRect().toJSON();
-    return { top: rect('#top-bar'), mode: rect('#mode-bar'), timer: rect('#recording-timer'),
+    return { top: rect('#top-bar'), settings: rect('#btn-settings'), mode: rect('#mode-bar'), timer: rect('#recording-timer'),
       video: rect('#camera-preview'), bottom: rect('#bottom-bar') };
   });
   assert.ok(layout.mode.height < 50, 'mode buttons stay on one line');
   assert.ok(layout.mode.left >= 0 && layout.mode.right <= 320);
-  assert.ok(layout.top.bottom <= layout.timer.top);
+  assert.ok(layout.timer.right <= layout.settings.left || layout.timer.left >= layout.settings.right ||
+    layout.timer.bottom <= layout.settings.top || layout.timer.top >= layout.settings.bottom,
+    'recording status stays clear of the settings control');
   assert.ok(layout.timer.bottom < layout.mode.top);
   assert.ok(Math.abs(layout.video.width - 320) < 1 || Math.abs(layout.video.height - 568) < 1, 'camera fits the whole viewport');
   assert.ok(layout.video.top >= -1 && layout.video.bottom <= 569, 'full frame is retained');

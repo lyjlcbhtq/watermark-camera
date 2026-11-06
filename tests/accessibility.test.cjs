@@ -152,7 +152,7 @@ test('Enter and Space operate settings without triggering the camera shortcut', 
 test('panel completion controls close dialogs and return focus to their opener', async t => {
   const page = await setup(t);
   for (const [opener, panel, closeName] of [
-    ['水印', 'watermark-panel', '完成水印设置'],
+    ['设置', 'watermark-panel', '完成水印设置'],
     ['相册', 'gallery-panel', '关闭相册'],
   ]) {
     const openButton = page.getByRole('button', { name: opener, exact: true });

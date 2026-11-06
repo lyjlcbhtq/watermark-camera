@@ -64,7 +64,10 @@ async function cameraReady(page) {
 }
 
 async function refresh(page) {
+  const wasOpen = await page.locator('#watermark-panel').evaluate(panel => panel.classList.contains('show'));
+  if (!wasOpen) await page.click('#btn-settings');
   await page.click('#location-summary');
+  if (!wasOpen) await page.click('[data-close-panel="watermark-panel"]');
 }
 
 async function watermark(page) { return page.locator('#wm-location-tl').textContent(); }
