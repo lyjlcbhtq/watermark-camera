@@ -44,16 +44,28 @@ async function setup(t) {
     };
     const fillText = CanvasRenderingContext2D.prototype.fillText;
     const clearRect = CanvasRenderingContext2D.prototype.clearRect;
+    const captureStream = HTMLCanvasElement.prototype.captureStream;
     window.visibleWatermarkLines = [];
+    window.captureWatermarkLines = new Map();
+    window.streamingCanvases = [];
+    HTMLCanvasElement.prototype.captureStream = function(...args) {
+      window.streamingCanvases.push(this);
+      return captureStream.apply(this, args);
+    };
     CanvasRenderingContext2D.prototype.clearRect = function(...args) {
       if (this.canvas.id === 'watermark-preview') window.visibleWatermarkLines = [];
       return clearRect.apply(this, args);
     };
     CanvasRenderingContext2D.prototype.fillText = function(text, x, y, ...args) {
-      if (this.canvas.id === 'watermark-preview') window.visibleWatermarkLines.push({
+      const line = {
         text, x, y, width: this.measureText(text).width,
         fontSize: Number(this.font.match(/[\d.]+(?=px)/)[0]), align: this.textAlign,
-      });
+      };
+      if (this.canvas.id === 'watermark-preview') window.visibleWatermarkLines.push(line);
+      else {
+        if (!window.captureWatermarkLines.has(this.canvas)) window.captureWatermarkLines.set(this.canvas, []);
+        window.captureWatermarkLines.get(this.canvas).push(line);
+      }
       return fillText.call(this, text, x, y, ...args);
     };
   });
@@ -70,6 +82,45 @@ async function changePreviewFraming(page) {
   await page.click('#btn-settings');
   await page.click('#btn-camera-fit');
   await page.click('[data-close-panel="watermark-panel"]');
+}
+
+async function watermarkLayout(page) {
+  return page.evaluate(() => {
+    const rect = selector => document.querySelector(selector).getBoundingClientRect().toJSON();
+    const layer = document.querySelector('#watermark-preview');
+    const box = layer.getBoundingClientRect();
+    const scale = box.width / layer.width;
+    return { video: rect('#camera-preview'), settings: rect('#btn-settings'),
+      obstacles: ['#btn-settings', '#mode-bar', '#bottom-bar', '#recording-timer.show']
+        .filter(selector => document.querySelector(selector))
+        .map(selector => ({ selector, ...rect(selector) })),
+      lines: window.visibleWatermarkLines.map(line => ({
+        text: line.text, left: box.left + (line.x - (line.align === 'right' ? line.width : 0)) * scale,
+        right: box.left + (line.x + (line.align === 'right' ? 0 : line.width)) * scale,
+        top: box.top + line.y * scale, bottom: box.top + (line.y + line.fontSize) * scale,
+      })) };
+  });
+}
+
+function assertNoControlOverlap(layout) {
+  for (const line of layout.lines) {
+    for (const control of layout.obstacles) {
+      assert.ok(line.right <= control.left + 0.5 || line.left >= control.right - 0.5 ||
+        line.bottom <= control.top + 0.5 || line.top >= control.bottom - 0.5,
+      `watermark line overlaps ${control.selector}: ${JSON.stringify(line)}`);
+    }
+  }
+}
+
+async function applySafeViewport(page, viewport, insets) {
+  await page.evaluate(values => {
+    for (const side of ['top', 'left', 'right']) document.documentElement.style.setProperty(`--camera-safe-${side}`, `${values[side] || 0}px`);
+  }, insets);
+  // Simulate an orientation/viewport change so cached canvas layout is recomputed.
+  await page.setViewportSize({ width: viewport.width + 1, height: viewport.height });
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await page.setViewportSize(viewport);
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 }
 
 test('home keeps common capture controls and settings retain framing, quality and location', async t => {
@@ -120,7 +171,7 @@ test('camera uses the whole viewport; crop preview keeps watermark visible and p
       const layer = document.querySelector('#watermark-preview');
       const box = layer.getBoundingClientRect();
       const scale = box.width / layer.width;
-      return { video: rect('#camera-preview'), top: rect('#top-bar'), mode: rect('#mode-bar'), bottom: rect('#bottom-bar'),
+      return { video: rect('#camera-preview'), settings: rect('#btn-settings'), mode: rect('#mode-bar'), bottom: rect('#bottom-bar'),
         lines: window.visibleWatermarkLines.map(line => ({
           text: line.text, left: box.left + (line.x - (line.align === 'right' ? line.width : 0)) * scale,
           right: box.left + (line.x + (line.align === 'right' ? 0 : line.width)) * scale,
@@ -130,7 +181,9 @@ test('camera uses the whole viewport; crop preview keeps watermark visible and p
     assert.ok(layout.video.left <= 1 && layout.video.top <= 1 && layout.video.right >= viewport.width - 1 && layout.video.bottom >= viewport.height - 1);
     assert.ok(layout.lines.length > 0);
     for (const line of layout.lines) {
-      assert.ok(line.left >= 0 && line.right <= viewport.width + 1 && line.top >= layout.top.bottom && line.bottom <= viewport.height, JSON.stringify(line));
+      assert.ok(line.left >= 0 && line.right <= viewport.width + 1 && line.top >= 0 && line.bottom <= viewport.height, JSON.stringify(line));
+      assert.ok(line.right <= layout.settings.left || line.left >= layout.settings.right ||
+        line.bottom <= layout.settings.top || line.top >= layout.settings.bottom, 'watermark avoids settings');
       if (viewport.width > viewport.height) assert.ok(line.right < layout.bottom.left);
       else assert.ok(line.bottom < layout.mode.top);
     }
@@ -158,6 +211,70 @@ test('camera uses the whole viewport; crop preview keeps watermark visible and p
     assert.ok(exported[edge].every((value, index) => Math.abs(value - expected[index]) < 12), `${edge} preserved`);
   }
   assert.equal(await page.locator('#preview-fullscreen').isVisible(), false, 'video fullscreen is hidden for photos');
+});
+
+test('upper watermark and settings use the safe top edge in browser and notched layouts without control overlap', async t => {
+  const page = await setup(t);
+  await page.click('#btn-settings');
+  await page.click('#toggle-manual-addr');
+  await page.fill('#manual-addr-input', '浙江省杭州市西湖区文三路九号停车场入口，请现场核对');
+  await page.click('[data-close-panel="watermark-panel"]');
+  const cases = [
+    { width: 320, height: 568, top: 0, left: 0, right: 0 },
+    { width: 390, height: 844, top: 0, left: 0, right: 0 },
+    { width: 390, height: 844, top: 47, left: 0, right: 0 },
+    { width: 390, height: 844, top: 59, left: 0, right: 0 },
+    { width: 844, height: 390, top: 0, left: 44, right: 0 },
+    { width: 844, height: 390, top: 0, left: 0, right: 44 },
+  ];
+  for (const scenario of cases) {
+    const viewport = { width: scenario.width, height: scenario.height };
+    await applySafeViewport(page, viewport, scenario);
+    for (const fill of [false, true]) {
+      if (fill) await changePreviewFraming(page);
+      const layout = await watermarkLayout(page);
+      assert.ok(Math.abs(layout.settings.top - Math.max(6, scenario.top)) < 1, 'settings hugs the safe top edge');
+      assert.ok(layout.settings.left >= scenario.left && layout.settings.right <= scenario.width - scenario.right);
+      assert.equal(layout.settings.width, 44, 'retain a usable touch target');
+      assertNoControlOverlap(layout);
+      for (const line of layout.lines) {
+        assert.ok(line.top >= scenario.top - 1 && line.bottom <= scenario.height + 1, JSON.stringify(line));
+        assert.ok(line.left >= scenario.left - 1 && line.right <= scenario.width - scenario.right + 1, JSON.stringify(line));
+      }
+      if (scenario.width < scenario.height) {
+        const first = layout.lines[0];
+        const imageTop = Math.max(0, layout.video.top);
+        assert.ok(first.top <= Math.max(scenario.top, imageTop) + 24, 'top-left text uses available space beside settings');
+      }
+      if (process.env.TOP_SPACING_SCREENSHOTS) {
+        await page.screenshot({ animations: 'disabled', path: `${process.env.TOP_SPACING_SCREENSHOTS}/${fill ? 'fill' : 'fit'}-${scenario.width}x${scenario.height}-safe${scenario.top}-${scenario.left}-${scenario.right}.png` });
+      }
+      if (fill) await changePreviewFraming(page);
+    }
+  }
+});
+
+test('the first recorded watermark matches the active preview with a notched top inset', async t => {
+  const page = await setup(t);
+  await applySafeViewport(page, { width: 390, height: 844 }, { top: 47, left: 0, right: 0 });
+  await page.click('#btn-settings');
+  await page.click('#toggle-time');
+  await page.click('#toggle-date');
+  await page.click('#toggle-manual-addr');
+  await page.fill('#manual-addr-input', '首帧位置一致的中文地址');
+  await page.click('#btn-camera-fit');
+  await page.click('[data-close-panel="watermark-panel"]');
+  await page.click('#shutter-btn');
+  await page.waitForSelector('#shutter-btn.recording');
+  const frames = await page.evaluate(() => ({
+    first: window.captureWatermarkLines.get(window.streamingCanvases.at(-1)),
+    preview: window.visibleWatermarkLines,
+  }));
+  assert.ok(frames.first?.length > 0, 'actual output canvas received its initial watermark');
+  assert.deepEqual(frames.first, frames.preview, 'recording startup reserves the same status area as active preview');
+  const layout = await watermarkLayout(page);
+  assertNoControlOverlap(layout);
+  assert.ok(layout.lines.every(line => line.top >= 47));
 });
 
 async function openStoredVideo(page) {

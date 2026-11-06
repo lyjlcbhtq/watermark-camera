@@ -19,6 +19,9 @@
     :root {
       color-scheme: dark;
       --camera: #161b19;
+      --camera-safe-top: env(safe-area-inset-top, 0px);
+      --camera-safe-left: env(safe-area-inset-left, 0px);
+      --camera-safe-right: env(safe-area-inset-right, 0px);
       --camera-text: #f3f5ef;
       --camera-muted: #a9b5ad;
       --paper: #f5f7f2;
@@ -50,7 +53,7 @@
     #watermark-preview { pointer-events: none; }
     .watermark-corner { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); pointer-events: none; }
 
-    #top-bar { position: absolute; top: 0; left: 0; right: 0; z-index: 10; display: flex; align-items: center; justify-content: flex-end; padding: calc(env(safe-area-inset-top, 0px) + 12px) max(20px, env(safe-area-inset-right, 0px)) 8px; background: linear-gradient(#0005, transparent); }
+    #top-bar { position: absolute; top: 0; left: 0; right: 0; z-index: 10; display: flex; align-items: center; justify-content: flex-end; padding: max(6px, var(--camera-safe-top)) max(12px, var(--camera-safe-right)) 0 max(12px, var(--camera-safe-left)); background: linear-gradient(#0005, transparent); }
     #camera-quality { margin-bottom: 12px; color: var(--muted); font-size: 13px; font-weight: 500; line-height: 1.6; }
     #location-summary { display: block; width: 100%; min-height: 44px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px; background: #f5f7f2; color: #766744; font-size: 13px; line-height: 1.6; text-align: left; overflow-wrap: anywhere; }
     #location-summary[data-precise="true"] { color: var(--accent); }
@@ -68,7 +71,7 @@
     #shutter-btn.video-mode .inner { background: #d7776c; }
     #shutter-btn.recording { border-color: #ef9b8f; }
     #shutter-btn.recording .inner { width: 28px; height: 28px; border-radius: 7px; background: #ed8b7d; }
-    #recording-timer { display: none; position: absolute; top: calc(env(safe-area-inset-top, 0px) + 18px); left: 50%; transform: translateX(-50%); z-index: 10; align-items: center; gap: 7px; height: 32px; padding: 0 11px; border-radius: 16px; background: #3c2825e6; color: #ffc2b8; font-size: 12px; font-variant-numeric: tabular-nums; letter-spacing: 1px; }
+    #recording-timer { display: none; position: absolute; top: max(6px, var(--camera-safe-top)); left: 50%; transform: translateX(-50%); z-index: 10; align-items: center; gap: 7px; height: 32px; padding: 0 11px; border-radius: 16px; background: #3c2825e6; color: #ffc2b8; font-size: 12px; font-variant-numeric: tabular-nums; letter-spacing: 1px; }
     #recording-audio-status { font-size: 10px; letter-spacing: 0; }
     #recording-timer.show { display: flex; }
     #recording-timer .dot { width: 5px; height: 5px; border-radius: 50%; background: #f29b8b; }
@@ -173,12 +176,12 @@
     .panel::-webkit-scrollbar { width: 3px; }
     .panel::-webkit-scrollbar-thumb { background: #c9d5c5; border-radius: 3px; }
     @media (min-width: 600px) { .panel { max-width: 500px; margin: 0 auto; padding-left: 24px; padding-right: 24px; } }
-    @media (max-width: 350px) { #top-bar { padding-left: 16px; padding-right: 16px; } #bottom-bar { padding-left: 24px; padding-right: 24px; } .panel { padding-left: 16px; padding-right: 16px; } .setting-group { padding: 15px 13px; } .color-dot { width: 27px; height: 27px; } }
+    @media (max-width: 350px) { #bottom-bar { padding-left: 24px; padding-right: 24px; } .panel { padding-left: 16px; padding-right: 16px; } .setting-group { padding: 15px 13px; } .color-dot { width: 27px; height: 27px; } }
     @media (orientation: landscape) {
-      #top-bar { right: calc(116px + env(safe-area-inset-right, 0px)); padding: 12px 16px 12px max(16px, env(safe-area-inset-left, 0px)); }
-      #mode-bar { top: 12px; bottom: auto; left: calc((100% - 116px - env(safe-area-inset-right, 0px)) / 2); }
-      #bottom-bar { top: 0; left: auto; width: calc(116px + env(safe-area-inset-right, 0px)); padding: 40px max(16px, env(safe-area-inset-right, 0px)) 12px 16px; flex-direction: column; justify-content: center; gap: 14px; background: linear-gradient(90deg, transparent, #000a); }
-      #recording-timer { top: 8px; left: auto; right: calc(16px + env(safe-area-inset-right, 0px)); transform: none; width: 84px; height: auto; min-height: 36px; padding: 4px; flex-wrap: wrap; justify-content: center; gap: 2px 5px; }
+      #top-bar { right: calc(116px + var(--camera-safe-right)); }
+      #mode-bar { top: max(6px, var(--camera-safe-top)); bottom: auto; left: calc((100% - 116px - var(--camera-safe-right)) / 2); }
+      #bottom-bar { top: 0; left: auto; width: calc(116px + var(--camera-safe-right)); padding: 40px max(16px, var(--camera-safe-right)) 12px 16px; flex-direction: column; justify-content: center; gap: 14px; background: linear-gradient(90deg, transparent, #000a); }
+      #recording-timer { top: max(6px, var(--camera-safe-top)); left: auto; right: calc(16px + var(--camera-safe-right)); transform: none; width: 84px; height: auto; min-height: 36px; padding: 4px; flex-wrap: wrap; justify-content: center; gap: 2px 5px; }
       #recording-audio-status { flex-basis: 100%; text-align: center; line-height: 11px; }
       .panel { max-height: calc(100vh - 12px); max-height: calc(100dvh - 12px); }
       .preview-header { padding-top: 8px; padding-bottom: 8px; }
@@ -802,7 +805,7 @@
   function createCaptureContext(type) {
     const context = {
       id: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      type, appVersion: '1.6.1', processing: 'canvas-burned-watermark',
+      type, appVersion: '1.6.2', processing: 'canvas-burned-watermark',
       timeSource: 'device-clock-unverified', startedAtDeviceMs: Date.now(),
       timezoneOffsetMinutes: new Date().getTimezoneOffset(), monotonicStart: performance.now(),
       inspection: { ...inspection, source: 'user-entered-unverified' },
@@ -1018,18 +1021,31 @@
 
   function watermarkBounds(width, height) {
     // Use the same visible safe rectangle when drawing both the preview and the file.
-    // This keeps time/address readable under the floating controls, even in crop preview.
+    // Share the top row with settings where possible, while excluding actual controls.
     const frame = previewFrame(width, height);
     const { stage, scale } = frame;
     if (!scale || !Number.isFinite(scale)) return { left: 0, top: 0, width, height };
-    const topBar = $('top-bar').getBoundingClientRect();
+    const topStyle = getComputedStyle($('top-bar'));
+    const settings = $('btn-settings').getBoundingClientRect();
     const modeBar = $('mode-bar').getBoundingClientRect();
     const bottomBar = $('bottom-bar').getBoundingClientRect();
     const landscape = stage.width > stage.height;
-    const timerBottom = !landscape && timerEl.classList.contains('show') ? timerEl.getBoundingClientRect().bottom : 0;
-    const safeTop = (landscape ? Math.max(topBar.bottom, modeBar.bottom) : Math.max(topBar.bottom, timerBottom)) - stage.top + 10;
-    const safeLeft = Math.max(10, parseFloat(getComputedStyle($('top-bar')).paddingLeft));
-    const safeRight = landscape ? bottomBar.left - stage.left - 10 : stage.width - 10;
+    const recordingLayout = isRecording || recordingStarting || recordingFinishing;
+    let timerBottom = 0;
+    if (!landscape && recordingLayout) {
+      const timerStyle = getComputedStyle(timerEl);
+      // Reserve the timer before it becomes visible, so the initial recorded frame
+      // and the active recording preview use exactly the same watermark geometry.
+      timerBottom = timerEl.classList.contains('show') ? timerEl.getBoundingClientRect().bottom :
+        stage.top + parseFloat(topStyle.paddingTop) + (parseFloat(timerStyle.height) || 32);
+    }
+    const safeLeft = Math.max(10, parseFloat(topStyle.paddingLeft));
+    let safeTop = Math.max(settings.bottom, landscape ? modeBar.bottom : timerBottom) - stage.top + 4;
+    let safeRight = landscape ? bottomBar.left - stage.left - 10 : stage.width - Math.max(10, parseFloat(topStyle.paddingRight));
+    if (!landscape && wmState.position === 'tl') {
+      safeTop = Math.max(parseFloat(topStyle.paddingTop), timerBottom ? timerBottom - stage.top + 6 : 0);
+      safeRight = Math.min(safeRight, settings.left - stage.left - 8);
+    }
     const safeBottom = landscape ? stage.height - 10 : Math.min(modeBar.top, bottomBar.top) - stage.top - 10;
     const clamp = (value, maximum) => Math.max(0, Math.min(maximum, value));
     const left = clamp((safeLeft - frame.left) / scale, width - 1);
@@ -1064,7 +1080,7 @@
   }
 
   function watermarkKey() {
-    return `${wmState.showTime ? Math.floor(Date.now() / 1000) : ''}:${wmState.showDate ? formatDate() : ''}:${watermarkRevision}:${innerWidth}x${innerHeight}:${cameraViewMode}:${isRecording}`;
+    return `${wmState.showTime ? Math.floor(Date.now() / 1000) : ''}:${wmState.showDate ? formatDate() : ''}:${watermarkRevision}:${innerWidth}x${innerHeight}:${cameraViewMode}:${isRecording}:${recordingStarting}`;
   }
 
   function drawVideoFrame(ctx, width, height) {

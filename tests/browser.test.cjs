@@ -253,7 +253,7 @@ test('app shell, manifest and icons load offline under a GitHub Pages subpath', 
   await page.waitForFunction(() => navigator.serviceWorker.controller !== null);
   const keys = await page.evaluate(async () => {
     const registration = await navigator.serviceWorker.ready;
-    const name = `watermark-camera-shell-${encodeURIComponent(registration.scope)}-v8`;
+    const name = `watermark-camera-shell-${encodeURIComponent(registration.scope)}-v9`;
     return (await (await caches.open(name)).keys()).map(request => request.url);
   });
   const expectedShell = ['index.html', 'media-store.js', 'manifest.json', 'icon.svg',
@@ -644,7 +644,7 @@ test('watermark preview matches all four exported corners and avoids controls in
     });
     const layout = await page.evaluate(() => {
       const rect = id => { const r = document.getElementById(id).getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height, right: r.right, bottom: r.bottom }; };
-      return { video: rect('camera-preview'), watermark: rect('watermark-preview'), top: rect('top-bar'), controls: rect('bottom-bar'), mode: rect('mode-bar'), text: window.previewText, size: [document.querySelector('#watermark-preview').width, document.querySelector('#watermark-preview').height] };
+      return { video: rect('camera-preview'), watermark: rect('watermark-preview'), settings: rect('btn-settings'), controls: rect('bottom-bar'), mode: rect('mode-bar'), text: window.previewText, size: [document.querySelector('#watermark-preview').width, document.querySelector('#watermark-preview').height] };
     });
     for (const property of ['x', 'y', 'width', 'height']) assert.ok(Math.abs(layout.video[property] - layout.watermark[property]) < 1);
     if (!(index % 2)) assert.ok(layout.mode.bottom <= layout.controls.y);
@@ -656,7 +656,11 @@ test('watermark preview matches all four exported corners and avoids controls in
       const top = layout.watermark.y + line.y * scale;
       const bottom = top + line.fontSize * scale;
       assert.ok(left >= 0 && right <= (index % 2 ? layout.controls.x : 390));
-      assert.ok(top >= layout.top.bottom && bottom < (index % 2 ? 390 : layout.mode.y));
+      assert.ok(top >= 0 && bottom < (index % 2 ? 390 : layout.mode.y));
+      for (const control of [layout.settings, layout.mode, layout.controls]) {
+        assert.ok(right <= control.x + 0.5 || left >= control.right - 0.5 ||
+          bottom <= control.y + 0.5 || top >= control.bottom - 0.5, 'watermark avoids actual controls');
+      }
     }
     await page.evaluate(() => { window.photoText = []; });
     await page.click('#shutter-btn');
