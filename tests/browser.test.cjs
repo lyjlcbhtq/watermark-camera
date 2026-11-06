@@ -253,7 +253,7 @@ test('app shell, manifest and icons load offline under a GitHub Pages subpath', 
   await page.waitForFunction(() => navigator.serviceWorker.controller !== null);
   const keys = await page.evaluate(async () => {
     const registration = await navigator.serviceWorker.ready;
-    const name = `watermark-camera-shell-${encodeURIComponent(registration.scope)}-v10`;
+    const name = `watermark-camera-shell-${encodeURIComponent(registration.scope)}-v11`;
     return (await (await caches.open(name)).keys()).map(request => request.url);
   });
   const expectedShell = ['index.html', 'media-store.js', 'manifest.json', 'icon.svg',
@@ -836,4 +836,226 @@ test('a device clock jump during recording is retained without authenticating it
   assert.equal(evidence.locationAtStart.authenticated, false);
   assert.equal(evidence.locationAtStart.lat, null);
   assert.ok(evidence.endedAtDeviceMs - evidence.startedAtDeviceMs - evidence.elapsedMs >= 59000);
+});
+
+async function useRetryableStorageFailure(page) {
+  await page.evaluate(() => {
+    const real = MediaStore;
+    window.retrySaveMode = 'fail';
+    window.retrySaveCalls = 0;
+    window.retrySaveRecords = [];
+    window.MediaStore = { ...real, put: async record => {
+      window.retrySaveCalls++;
+      if (!window.retrySaveRecords.some(item => item.id === record.id)) window.retrySaveRecords.push(record);
+      if (window.retrySaveMode === 'fail') throw new DOMException('Full', 'QuotaExceededError');
+      if (window.retrySaveMode === 'defer') await new Promise(resolve => { window.completeRetrySave = resolve; });
+      return real.put(record);
+    } };
+  });
+}
+
+async function retrySaveSnapshot(page, storedId = null, index = 0) {
+  return page.evaluate(async ({ storedId, index }) => {
+    const record = storedId ? await MediaStore.get(storedId) : window.retrySaveRecords[index];
+    const bytes = await record.blob.arrayBuffer();
+    const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))]
+      .map(byte => byte.toString(16).padStart(2, '0')).join('');
+    return { id: record.id, type: record.type, timestamp: record.timestamp, evidence: record.evidence, hash, size: bytes.byteLength };
+  }, { storedId, index });
+}
+
+test('retrying a failed save commits the same original once and survives reload', async t => {
+  const { page } = await setup(t);
+  await ready(page);
+  await useRetryableStorageFailure(page);
+  await page.click('#shutter-btn');
+  await page.waitForSelector('#preview-modal.show img');
+  const original = await retrySaveSnapshot(page);
+  await page.evaluate(() => { window.retrySaveMode = 'defer'; });
+  await page.getByRole('button', { name: '重试存入本机', exact: true }).click();
+  await page.waitForFunction(() => typeof window.completeRetrySave === 'function');
+  assert.equal(await page.getByRole('button', { name: '正在存入本机…', exact: true }).isDisabled(), true);
+  assert.equal(await page.getByRole('button', { name: '删除此作品', exact: true }).isDisabled(), true);
+  await page.evaluate(() => [...document.querySelectorAll('#preview-actions button')]
+    .find(button => button.textContent.includes('正在存入本机')).click());
+  assert.equal(await page.evaluate(() => window.retrySaveCalls), 2);
+  await page.evaluate(() => window.completeRetrySave());
+  await page.waitForFunction(() => document.querySelector('.preview-save-hint').textContent.includes('举证请保留原文件'));
+  assert.equal(await page.getByRole('button', { name: '重试存入本机', exact: true }).count(), 0);
+  assert.doesNotMatch(await page.locator('#gallery-status').textContent(), /尚未存入/);
+  assert.deepEqual(await retrySaveSnapshot(page, original.id), original);
+  await page.reload();
+  await ready(page);
+  assert.equal(await page.evaluate(async () => (await MediaStore.list()).length), 1);
+  assert.deepEqual(await retrySaveSnapshot(page, original.id), original);
+  await page.click('#btn-gallery');
+  await page.locator('.gallery-item').click();
+  await page.waitForFunction(() => document.querySelector('#preview-modal img')?.naturalWidth > 0);
+  assert.equal(await page.getByRole('button', { name: '重试存入本机', exact: true }).count(), 0);
+});
+
+test('repeated save failures retain a playable and byte-identical downloadable original', async t => {
+  const { page } = await setup(t, { mode: 'default' });
+  await ready(page);
+  await useRetryableStorageFailure(page);
+  await page.click('#shutter-btn');
+  await page.waitForSelector('#shutter-btn.recording');
+  await encodedClipReady(page);
+  await page.click('#shutter-btn');
+  await page.waitForFunction(() => document.querySelector('#preview-modal video')?.readyState >= 2);
+  const original = await retrySaveSnapshot(page);
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await page.getByRole('button', { name: '重试存入本机', exact: true }).click();
+    await page.waitForFunction(() => document.querySelector('#toast').textContent.includes('仍未存入本机'));
+    assert.equal(await page.getByRole('button', { name: '重试存入本机', exact: true }).isEnabled(), true);
+  }
+  assert.equal(await page.evaluate(() => window.retrySaveCalls), 3);
+  assert.equal(await page.evaluate(async () => (await MediaStore.list()).length), 0);
+  assert.match(await page.locator('.preview-save-hint').textContent(), /尚未存入本机/);
+  await page.click('#preview-close');
+  await page.click('#btn-gallery');
+  await page.locator('.gallery-item').click();
+  await page.waitForFunction(() => document.querySelector('#preview-modal video')?.readyState >= 2);
+  const downloading = page.waitForEvent('download');
+  await page.getByRole('button', { name: '下载原文件', exact: true }).click();
+  const bytes = await fs.readFile(await (await downloading).path());
+  assert.equal(createHash('sha256').update(bytes).digest('hex'), original.hash);
+  assert.deepEqual(await retrySaveSnapshot(page), original);
+});
+
+test('a late save retry neither alters another pending preview nor reopens a closed one', async t => {
+  const { page } = await setup(t);
+  await ready(page);
+  await useRetryableStorageFailure(page);
+  await page.click('#shutter-btn');
+  await page.waitForSelector('#preview-modal.show img');
+  const first = await retrySaveSnapshot(page);
+  await page.click('#preview-close');
+  await ready(page);
+  await page.click('#shutter-btn');
+  await page.waitForSelector('#preview-modal.show img');
+  const second = await retrySaveSnapshot(page, null, 1);
+  await page.click('#preview-close');
+  await page.click('#btn-gallery');
+  await page.locator(`.gallery-item[data-id="${first.id}"]`).click();
+  await page.getByRole('button', { name: '重试存入本机', exact: true }).waitFor();
+  await page.evaluate(() => { window.retrySaveMode = 'defer'; });
+  await page.getByRole('button', { name: '重试存入本机', exact: true }).click();
+  await page.waitForFunction(() => typeof window.completeRetrySave === 'function');
+  await page.click('#preview-close');
+  await page.locator(`.gallery-item[data-id="${first.id}"]`).click();
+  assert.equal(await page.getByRole('button', { name: '正在存入本机…', exact: true }).isDisabled(), true);
+  assert.equal(await page.evaluate(() => window.retrySaveCalls), 3, 'reopening observes the existing attempt');
+  await page.click('#preview-close');
+  await page.locator(`.gallery-item[data-id="${second.id}"]`).click();
+  await page.getByRole('button', { name: '重试存入本机', exact: true }).waitFor();
+  const secondURL = await page.locator('#preview-modal img').getAttribute('src');
+  await page.evaluate(() => window.completeRetrySave());
+  await page.waitForFunction(async () => (await MediaStore.list()).length === 1);
+  assert.equal(await page.locator('#preview-modal img').getAttribute('src'), secondURL);
+  assert.match(await page.locator('.preview-save-hint').textContent(), /尚未存入本机/);
+  assert.equal(await page.getByRole('button', { name: '重试存入本机', exact: true }).isEnabled(), true);
+  assert.deepEqual(await retrySaveSnapshot(page, first.id), first);
+  assert.deepEqual(await retrySaveSnapshot(page, null, 1), second);
+  await page.getByRole('button', { name: '重试存入本机', exact: true }).click();
+  await page.waitForFunction(() => window.retrySaveCalls === 4);
+  await page.click('#preview-close');
+  await page.evaluate(() => window.completeRetrySave());
+  await page.waitForFunction(async () => (await MediaStore.list()).length === 2);
+  assert.equal(await page.locator('#preview-modal').evaluate(modal => modal.classList.contains('show')), false);
+  assert.deepEqual(await retrySaveSnapshot(page, second.id), second);
+});
+
+test('a stale album read cannot hide a work after its retry commits', async t => {
+  const { page } = await setup(t);
+  await ready(page);
+  await useRetryableStorageFailure(page);
+  await page.click('#shutter-btn');
+  await page.waitForSelector('#preview-modal.show img');
+  const original = await retrySaveSnapshot(page);
+  await page.evaluate(() => { window.retrySaveMode = 'defer'; });
+  await page.getByRole('button', { name: '重试存入本机', exact: true }).click();
+  await page.waitForFunction(() => typeof window.completeRetrySave === 'function');
+  await page.click('#preview-close');
+  await page.evaluate(() => {
+    window.MediaStore = { ...MediaStore, listPage: () => new Promise(resolve => {
+      window.completeStaleAlbum = () => resolve({ items: [], nextCursor: null });
+    }) };
+  });
+  await page.click('#btn-gallery');
+  await page.waitForFunction(() => typeof window.completeStaleAlbum === 'function');
+  await page.evaluate(() => window.completeRetrySave());
+  await page.waitForFunction(async () => (await MediaStore.list()).length === 1);
+  await page.evaluate(() => window.completeStaleAlbum());
+  await page.locator(`.gallery-item[data-id="${original.id}"]`).waitFor();
+  assert.equal(await page.locator('.gallery-item').count(), 1);
+  assert.doesNotMatch(await page.locator('#gallery-status').textContent(), /尚未存入/);
+  assert.deepEqual(await retrySaveSnapshot(page, original.id), original);
+});
+
+test('recording interruptions stay visible after reopening, including manual stops with incomplete final data', async t => {
+  const { page } = await setup(t);
+  await ready(page);
+  await page.evaluate(async () => {
+    const cases = [
+      { id: 'interrupted', recording: { stopReason: 'manual', interrupted: true, audioInterrupted: true } },
+      { id: 'audio', recording: { stopReason: 'manual', interrupted: false, audioInterrupted: true } },
+      { id: 'duration', recording: { stopReason: 'duration-limit', interrupted: false } },
+      { id: 'clean', recording: { stopReason: 'manual', interrupted: false, audioInterrupted: false } },
+      { id: 'legacy' },
+    ];
+    for (const [index, item] of cases.entries()) await MediaStore.put({ id: item.id, type: 'video', timestamp: index,
+      blob: new Blob(['fixture'], { type: 'video/webm' }), evidence: item.recording ? { recording: item.recording } : null });
+  });
+  await page.click('#btn-gallery');
+  for (const [id, phrases] of [['interrupted', ['片段可能不完整', '录音曾中断']], ['audio', ['录音曾中断']],
+    ['duration', ['时长上限']], ['clean', []], ['legacy', []]]) {
+    await page.locator(`.gallery-item[data-id="${id}"]`).click();
+    await page.getByRole('button', { name: '下载原文件', exact: true }).waitFor();
+    if (phrases.length) {
+      const text = await page.locator('.preview-recording-hint').textContent();
+      for (const phrase of phrases) assert.ok(text.includes(phrase));
+    } else assert.equal(await page.locator('.preview-recording-hint').count(), 0);
+    await page.click('#preview-close');
+  }
+});
+
+test('all pending recording actions and warnings remain scrollable on small portrait and landscape screens', async t => {
+  const { context, page } = await setup(t, { mode: 'default' });
+  await ready(page);
+  await useRetryableStorageFailure(page);
+  await page.evaluate(() => {
+    const original = MediaStore;
+    window.MediaStore = { ...original, put: record => {
+      record.evidence.recording.interrupted = true;
+      record.evidence.recording.audioInterrupted = true;
+      return original.put(record);
+    } };
+  });
+  await page.click('#shutter-btn');
+  await page.waitForSelector('#shutter-btn.recording');
+  await encodedClipReady(page);
+  await page.click('#shutter-btn');
+  await page.waitForFunction(() => document.querySelector('#preview-modal video')?.readyState >= 2);
+  assert.equal(await page.locator('#preview-actions button').count(), 6);
+  assert.equal(await page.locator('.preview-recording-hint').count(), 1);
+  const cdp = await context.newCDPSession(page);
+  for (const viewport of [{ width: 320, height: 568 }, { width: 568, height: 320 }, { width: 844, height: 390 }]) {
+    await page.setViewportSize(viewport);
+    await cdp.send('Emulation.setSafeAreaInsetsOverride', { insets: viewport.width > viewport.height
+      ? { top: 0, right: 44, bottom: 21, left: 44 } : { top: 59, right: 0, bottom: 34, left: 0 } });
+    await page.evaluate(() => new Promise(requestAnimationFrame));
+    const elements = page.locator('#preview-actions button, .preview-save-hint, .preview-recording-hint');
+    const count = await elements.count();
+    for (const index of [...Array(count).keys(), ...Array(count).keys()].map((index, pass) => pass < count ? index : count - index - 1)) {
+      const result = await elements.nth(index).evaluate(element => {
+        element.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        const rect = element.getBoundingClientRect();
+        const box = document.querySelector('#preview-actions').getBoundingClientRect();
+        return { label: element.textContent.trim(), accessible: rect.top >= box.top - 1 && rect.bottom <= box.bottom + 1 &&
+          rect.left >= box.left - 1 && rect.right <= box.right + 1 && rect.top >= 0 && rect.bottom <= innerHeight + 1 };
+      });
+      assert.ok(result.accessible, `${viewport.width}x${viewport.height}: ${result.label} can be scrolled fully into view`);
+    }
+  }
 });

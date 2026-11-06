@@ -343,39 +343,162 @@ test('a transient camera mute can recover; a persistent mute releases the camera
   await page.waitForFunction(() => document.querySelector('#loading-overlay').classList.contains('hidden'));
 });
 
-test('recording stops at three minutes even when no periodic data event arrives', async t => {
+async function limitedRecordingPage(t) {
   const context = await browser.newContext();
   t.after(() => context.close());
   await context.addInitScript(() => {
     Object.defineProperty(navigator.geolocation, 'watchPosition', { configurable: true, value: undefined });
     navigator.geolocation.getCurrentPosition = (success, error) => error({ code: 1 });
+    window.limitRecorders = [];
     window.MediaRecorder = class {
       static isTypeSupported(type) { return type === 'video/mp4'; }
       constructor(stream, options) {
         this.stream = stream;
         this.mimeType = options.mimeType;
         this.state = 'inactive';
-        window.durationRecorder = this;
+        this.stopCalls = 0;
+        window.limitRecorders.push(this);
       }
       start() { this.state = 'recording'; }
+      emit(value) {
+        this.ondataavailable?.({ data: new Blob([typeof value === 'number' ? new Uint8Array(value) : value], { type: this.mimeType }) });
+      }
       stop() {
+        this.stopCalls++;
         this.state = 'inactive';
-        this.ondataavailable?.({ data: new Blob(['final encoded data'], { type: 'video/mp4' }) });
+        this.emit('final encoded data');
         this.onstop?.();
       }
     };
   });
   const page = await context.newPage();
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  t.after(() => assert.deepEqual(errors, [], 'no uncaught recording errors'));
   await page.clock.install();
   await page.goto(origin);
   await page.waitForFunction(() => document.querySelector('#loading-overlay').classList.contains('hidden'));
   await page.click('[data-mode="video"]');
   await page.click('#shutter-btn');
   await page.waitForSelector('#shutter-btn.recording');
-  await page.clock.fastForward(3 * 60 * 1000);
+  return page;
+}
+
+async function savedLimitRecording(page) {
   await page.waitForSelector('#preview-modal.show video');
-  assert.equal(await page.evaluate(() => window.durationRecorder.state), 'inactive');
-  assert.equal(await page.evaluate(() => window.durationRecorder.stream.getTracks().every(track => track.readyState === 'ended')), true);
+  return page.evaluate(async () => {
+    const list = await MediaStore.list();
+    const record = await MediaStore.get(list[0].id);
+    const recorder = window.limitRecorders[window.limitRecorders.length - 1];
+    return { count: list.length, bytes: record.blob.size, tail: await record.blob.slice(-18).text(),
+      details: record.evidence.recording, stopCalls: recorder.stopCalls, state: recorder.state,
+      tracksEnded: recorder.stream.getTracks().every(track => track.readyState === 'ended') };
+  });
+}
+
+test('recording stops at three minutes when no periodic data event arrives and preserves final data', async t => {
+  const page = await limitedRecordingPage(t);
+  await page.clock.fastForward(3 * 60 * 1000);
+  const saved = await savedLimitRecording(page);
+  assert.equal(saved.details.stopReason, 'data-delay');
+  assert.equal(saved.tail, 'final encoded data');
+  assert.equal(saved.count, 1);
+  assert.equal(saved.stopCalls, 1);
+  assert.equal(saved.state, 'inactive');
+  assert.equal(saved.tracksEnded, true);
+  assert.match(await page.locator('.preview-recording-hint').textContent(), /控制本段大小.*提前结束/);
+});
+
+test('empty encoder events do not postpone the no-data safety deadline', async t => {
+  const page = await limitedRecordingPage(t);
+  for (let minute = 0; minute < 2; minute++) {
+    await page.clock.fastForward(60 * 1000);
+    await page.evaluate(() => window.limitRecorders[0].emit(''));
+  }
+  await page.clock.fastForward(60 * 1000);
+  const saved = await savedLimitRecording(page);
+  assert.equal(saved.details.stopReason, 'data-delay');
+  assert.equal(saved.bytes, 18);
+  assert.equal(saved.stopCalls, 1);
+});
+
+test('regular encoder data permits recording past three minutes and saves once at five minutes', async t => {
+  const page = await limitedRecordingPage(t);
+  for (let minute = 1; minute <= 4; minute++) {
+    await page.clock.fastForward(60 * 1000);
+    assert.equal(await page.evaluate(() => window.limitRecorders[0].state), 'recording');
+    await page.evaluate(() => window.limitRecorders[0].emit('chunk'));
+  }
+  await page.clock.fastForward(60 * 1000);
+  const saved = await savedLimitRecording(page);
+  assert.equal(saved.details.stopReason, 'duration-limit');
+  assert.equal(saved.details.durationLimitMs, 5 * 60 * 1000);
+  assert.equal(saved.bytes, 4 * 5 + 18);
+  assert.equal(saved.tail, 'final encoded data');
+  assert.equal(saved.count, 1);
+  assert.equal(saved.stopCalls, 1);
+  assert.equal(saved.tracksEnded, true);
+  assert.match(await page.locator('.preview-recording-hint').textContent(), /时长上限.*自动结束/);
+});
+
+test('stalled delivery near the capacity limit ends early without discarding the final chunk', async t => {
+  const page = await limitedRecordingPage(t);
+  await page.evaluate(() => window.limitRecorders[0].emit(60 * 1024 * 1024));
+  await page.clock.fastForward(10 * 1000);
+  assert.equal(await page.evaluate(() => window.limitRecorders[0].state), 'recording');
+  await page.clock.fastForward(10 * 1000);
+  const saved = await savedLimitRecording(page);
+  assert.equal(saved.details.stopReason, 'data-delay');
+  assert.equal(saved.bytes, 60 * 1024 * 1024 + 18);
+  assert.equal(saved.tail, 'final encoded data');
+  assert.equal(saved.stopCalls, 1);
+  assert.equal(saved.tracksEnded, true);
+});
+
+test('the byte limit stops once and keeps the oversized chunk plus final encoder output', async t => {
+  const page = await limitedRecordingPage(t);
+  await page.evaluate(() => window.limitRecorders[0].emit(64 * 1024 * 1024 + 100));
+  const saved = await savedLimitRecording(page);
+  assert.equal(saved.details.stopReason, 'size-limit');
+  assert.equal(saved.bytes, 64 * 1024 * 1024 + 118);
+  assert.equal(saved.tail, 'final encoded data');
+  assert.equal(saved.count, 1);
+  assert.equal(saved.stopCalls, 1);
+  assert.equal(saved.tracksEnded, true);
+  assert.match(await page.locator('.preview-recording-hint').textContent(), /容量/);
+});
+
+test('old recording deadlines and callbacks cannot stop a later recording', async t => {
+  const page = await limitedRecordingPage(t);
+  await page.evaluate(() => {
+    const recorder = window.limitRecorders[0];
+    window.oldLimitCallbacks = { data: recorder.ondataavailable, stop: recorder.onstop, error: recorder.onerror };
+  });
+  await page.clock.fastForward(2 * 60 * 1000);
+  await page.click('#shutter-btn');
+  assert.equal((await savedLimitRecording(page)).details.stopReason, 'manual');
+  await page.click('#preview-close');
+  await page.waitForFunction(() => document.querySelector('#camera-preview').readyState >= 2 &&
+    document.querySelector('#loading-overlay').classList.contains('hidden'));
+  await page.click('#shutter-btn');
+  await page.waitForSelector('#shutter-btn.recording');
+  for (let minute = 0; minute < 4; minute++) {
+    await page.clock.fastForward(60 * 1000);
+    await page.evaluate(() => {
+      window.oldLimitCallbacks.data({ data: new Blob(['stale data']) });
+      window.oldLimitCallbacks.stop();
+      window.oldLimitCallbacks.error();
+      window.limitRecorders[1].emit('current');
+    });
+    assert.equal(await page.evaluate(() => window.limitRecorders[1].state), 'recording');
+  }
+  await page.click('#shutter-btn');
+  const saved = await savedLimitRecording(page);
+  assert.equal(saved.count, 2);
+  assert.equal(saved.details.stopReason, 'manual');
+  assert.equal(saved.bytes, 4 * 7 + 18);
+  assert.equal(saved.stopCalls, 1);
+  assert.equal(saved.tracksEnded, true);
 });
 
 test('an initial recording frame failure clears the timer and microphone without leaving the shutter busy', async t => {

@@ -153,7 +153,7 @@
     .action-btn.danger { color: #9b625a; background: #f2eae5; }
     .preview-actions .primary { grid-column: 1 / -1; min-height: 48px; font-size: 15px; }
     .preview-actions .secondary { flex-direction: column; gap: 6px; min-height: 58px; padding: 12px 4px; font-size: 11px; font-weight: 500; white-space: nowrap; }
-    .preview-save-hint { grid-column: 1 / -1; color: var(--muted); font-size: 11px; line-height: 1.65; text-align: center; }
+    .preview-save-hint, .preview-recording-hint { grid-column: 1 / -1; color: var(--muted); font-size: 11px; line-height: 1.65; text-align: center; }
     .preview-actions .evidence-action { grid-column: 1 / -1; min-height: 36px; padding: 8px; background: #e8eee4; color: var(--accent); font-size: 12px; }
     #preview-modal.watch-fullscreen { background: #000; }
     #preview-modal.watch-fullscreen .preview-header, #preview-modal.watch-fullscreen .preview-actions { display: none; }
@@ -186,7 +186,7 @@
       .panel { max-height: calc(100vh - 12px); max-height: calc(100dvh - 12px); }
       .preview-header { padding-top: 8px; padding-bottom: 8px; }
       .preview-media { padding: 6px 260px 16px 24px; }
-      .preview-actions { position: absolute; right: 0; top: 64px; bottom: 0; width: 240px; max-height: none; padding: 12px; align-content: center; }
+      .preview-actions { position: absolute; right: 0; top: 64px; bottom: 0; width: 240px; max-height: none; padding: 12px; align-content: start; }
       #toast { bottom: 20px; }
     }
     @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }
@@ -333,7 +333,7 @@
         <button class="option-btn active" data-quality="eco" aria-pressed="true"><span class="quality-name">省电 <small>720p</small></span><span class="quality-detail">日常记录，轻盈省心</span></button>
         <button class="option-btn" data-quality="hd" aria-pressed="false"><span class="quality-name">清晰 <small>1080p</small></span><span class="quality-detail">保留更多画面细节</span></button>
       </div>
-      <p class="setting-hint quality-hint">默认使用省电画质。清晰模式更耗电，实际分辨率取决于设备。</p>
+      <p class="setting-hint quality-hint">默认使用省电画质。清晰模式更耗电，实际分辨率取决于设备。单段最长5分钟；文件较大或编码数据返回较慢时会提前结束，请检查成片后继续拍摄下一段。</p>
     </div>
 
     <div class="setting-group">
@@ -509,7 +509,9 @@
   let recordingAttempt = 0;
   let recordingSession = null;
   let cameraMuteTimer = null;
-  const MAX_RECORDING_MS = 3 * 60 * 1000;
+  const MAX_RECORDING_MS = 5 * 60 * 1000;
+  const MAX_RECORDING_BYTES = 64 * 1024 * 1024;
+  const MAX_ENCODER_WAIT_MS = 3 * 60 * 1000;
   let microphoneStream = null;
   let videoFrameId = null;
   let watermarkCanvas = null;
@@ -805,7 +807,7 @@
   function createCaptureContext(type) {
     const context = {
       id: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      type, appVersion: '1.6.3', processing: 'canvas-burned-watermark',
+      type, appVersion: '1.7.0', processing: 'canvas-burned-watermark',
       timeSource: 'device-clock-unverified', startedAtDeviceMs: Date.now(),
       timezoneOffsetMinutes: new Date().getTimezoneOffset(), monotonicStart: performance.now(),
       inspection: { ...inspection, source: 'user-entered-unverified' },
@@ -955,7 +957,7 @@
       const track = acquired.getVideoTracks()[0];
       const interrupted = () => {
         if (generation !== cameraGeneration) return;
-        stopRecording();
+        stopRecording('camera-interrupted');
         releaseCamera();
         setCameraMessage('相机已中断，点击重试恢复', true);
       };
@@ -1221,6 +1223,7 @@
       session.finished = true;
       clearTimeout(session.stopTimeout);
       clearTimeout(session.durationTimeout);
+      clearTimeout(session.dataTimeout);
       session.releaseAudioListeners?.();
       if (session.wakeLock) {
         try { Promise.resolve(session.wakeLock.release()).catch(() => {}); } catch (_) { /* Already released. */ }
@@ -1251,11 +1254,15 @@
     if (session !== recordingSession || session.finished) return;
     session.finished = true;
     session.failed ||= interrupted;
+    session.stopReason ||= 'unexpected-stop';
+    if (session.stopReason === 'unexpected-stop') session.failed = true;
     endCaptureContext(session.captureContext);
     if (session.captureContext) session.captureContext.recording = {
       interrupted: Boolean(session.failed), audioInterrupted: Boolean(session.audioInterrupted),
       microphoneTrackPresent: Boolean(session.recorder.stream?.getAudioTracks().length),
       outputMimeType: session.recorder.mimeType || null,
+      stopReason: session.stopReason, durationLimitMs: MAX_RECORDING_MS,
+      byteLimit: MAX_RECORDING_BYTES,
     };
     let blob = null;
     try {
@@ -1273,7 +1280,8 @@
         showToast('录制未完成，请重试');
       } else if (await addCapturedMedia('video', blob, null, session.captureContext)) {
         showToast(session.failed ? '录制中断，请检查已保留的片段' :
-          session.audioInterrupted ? '录制完成，期间声音曾中断，请检查录音' : '录制完成');
+          session.audioInterrupted ? '录制完成，期间声音曾中断，请检查录音' :
+          session.stopReason !== 'manual' ? '本段已自动结束，请检查成片；需要时继续下一段' : '录制完成');
       }
     } catch (error) {
       showToast('录像保存失败，请重试');
@@ -1303,6 +1311,26 @@
         reject(error);
       });
     });
+  }
+
+  function armRecordingDataDeadline(session) {
+    clearTimeout(session.dataTimeout);
+    if (session !== recordingSession || session.finished || !isRecording) return;
+    // timeslice is advisory. Bound unreported encoder data by the remaining byte
+    // budget and a conservative bitrate estimate, never waiting longer than the
+    // previous three-minute limit. This is a fallback, not a hard RAM guarantee.
+    const remaining = Math.max(0, MAX_RECORDING_BYTES - session.recordedBytes);
+    const delay = Math.min(MAX_ENCODER_WAIT_MS, remaining * 8000 / session.bufferBitrate);
+    session.dataTimeout = setTimeout(() => {
+      if (session !== recordingSession || session.finished || !isRecording) return;
+      stopRecording('data-delay');
+    }, delay);
+  }
+
+  function warnRecordingLimit(session) {
+    if (session.limitWarned) return;
+    session.limitWarned = true;
+    showToast('本段即将达到限制并自动结束，请留意；检查成片后可继续下一段');
   }
 
   async function startRecording() {
@@ -1365,7 +1393,7 @@
           else animFrameId = requestAnimationFrame(drawFrame);
         } catch (error) {
           session.failed = true;
-          stopRecording();
+          stopRecording('render-error');
         }
       }
       // 首帧先绘制，避免录制开头出现空白。
@@ -1391,8 +1419,12 @@
         let candidateSession = null;
         try {
           candidate = new MediaRecorder(combined, { ...(mimeType ? { mimeType } : {}), videoBitsPerSecond: CAMERA_PROFILES[wmState.quality].bitrate });
+          const reportedBitrate = Number.isFinite(candidate.videoBitsPerSecond) ? candidate.videoBitsPerSecond : 0;
+          const reportedAudio = Number.isFinite(candidate.audioBitsPerSecond) ? candidate.audioBitsPerSecond : 0;
           candidateSession = { recorder: candidate, captureContext, chunks: [], recordedBytes: 0, failed: false,
-            finished: false, audioInterrupted: false, stopTimeout: null, durationTimeout: null, wakeLock: null };
+            bufferBitrate: Math.max(CAMERA_PROFILES[wmState.quality].bitrate, reportedBitrate) + Math.max(256000, reportedAudio),
+            finished: false, audioInterrupted: false, stopTimeout: null, durationTimeout: null, dataTimeout: null,
+            stopReason: null, limitWarned: false, wakeLock: null };
           recordingSession = candidateSession;
           candidate.ondataavailable = event => {
             if (candidateSession !== recordingSession || candidateSession.finished) return;
@@ -1400,9 +1432,11 @@
               candidateSession.chunks.push(event.data);
               candidateSession.recordedBytes += event.data.size;
               // 限制单段缓冲，避免长时间录像耗尽 iOS 页面内存。
-              if (candidateSession.recordedBytes >= 64 * 1024 * 1024 && isRecording) {
-                showToast('本段录像已达容量限制，正在保存');
-                stopRecording();
+              if (candidateSession.recordedBytes >= MAX_RECORDING_BYTES && isRecording) {
+                stopRecording('size-limit');
+              } else if (isRecording) {
+                if (candidateSession.recordedBytes >= MAX_RECORDING_BYTES * 0.875) warnRecordingLimit(candidateSession);
+                armRecordingDataDeadline(candidateSession);
               }
             }
           };
@@ -1410,7 +1444,7 @@
           candidate.onerror = () => {
             if (candidateSession !== recordingSession || candidateSession.finished) return;
             candidateSession.failed = true;
-            stopRecording();
+            stopRecording('encoder-error');
           };
           candidate.start(1000);
           session = candidateSession;
@@ -1470,15 +1504,16 @@
       timerInterval = setInterval(() => {
         seconds = Math.floor((performance.now() - startedAt) / 1000);
         timerDisplay.textContent = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+        if (MAX_RECORDING_MS - (performance.now() - startedAt) <= 30000) warnRecordingLimit(session);
       }, 1000);
       // timeslice 不能保证按时返回数据，另用时长上限约束内存。
       session.durationTimeout = setTimeout(() => {
         if (session !== recordingSession || !isRecording) return;
-        showToast('已录制3分钟，正在保存；可继续拍摄下一段');
-        stopRecording();
+        stopRecording('duration-limit');
       }, MAX_RECORDING_MS);
+      armRecordingDataDeadline(session);
       shutterBtn.classList.add('recording');
-      showToast(audioWasActive ? '开始录像，每段最长3分钟' : '无声录像已开始，每段最长3分钟');
+      showToast(audioWasActive ? '开始录像，最长5分钟；文件较大时会提前结束' : '无声录像已开始，最长5分钟；文件较大时会提前结束');
       renderWatermarkPreview();
       drawFrame(performance.now());
     } catch (error) {
@@ -1487,12 +1522,14 @@
     }
   }
 
-  function stopRecording() {
+  function stopRecording(reason = 'manual') {
     recordingAttempt++;
     recordingStarting = false;
     const session = recordingSession;
     if (!session || session.finished) return;
     if (recordingFinishing) return;
+    session.stopReason ||= reason;
+    if (['camera-interrupted', 'encoder-error', 'render-error'].includes(reason)) session.failed = true;
     endCaptureContext(session.captureContext);
     isRecording = false;
     recordingFinishing = true;
@@ -1507,6 +1544,7 @@
     // 停止音频采集；最终数据仍由 ondataavailable/onstop 接收。
     microphoneStream?.getTracks().forEach(track => track.stop());
     clearTimeout(session.durationTimeout);
+    clearTimeout(session.dataTimeout);
     // iOS 编码器中断后可能没有最终事件；保留已返回片段并解除忙碌状态。
     session.stopTimeout = setTimeout(() => finishRecording(session, true), 5000);
     if (session.recorder.state !== 'inactive') {
@@ -1518,7 +1556,7 @@
   // ==================== 本机相册与预览 ====================
   function updateGalleryStatus() {
     $('gallery-status').textContent = pendingMedia.size
-      ? '有作品尚未存入本机，请打开预览并保存到系统相册，勿刷新页面。'
+      ? '有作品尚未存入本机，请打开预览重试保存或下载原文件，勿刷新页面。'
       : '作品保存在本机，请将重要作品另存到系统相册。';
   }
 
@@ -1558,6 +1596,28 @@
     }
   }
 
+  const pendingMediaWrites = new Map();
+
+  function savePendingMedia(record) {
+    if (pendingMediaWrites.has(record.id)) return pendingMediaWrites.get(record.id);
+    const attempt = Promise.resolve().then(() => MediaStore.put(record)).then(() => {
+      // Only the committed record may leave the in-memory fallback.
+      if (pendingMedia.get(record.id) === record) pendingMedia.delete(record.id);
+      // A list started before the commit may omit this work. Keep the current
+      // gallery item and ignore that older snapshot after its fallback is removed.
+      galleryLoadGeneration++;
+      galleryLoading = false;
+      updateGalleryStatus();
+      if ($('gallery-panel').classList.contains('show')) updateGalleryGrid();
+    });
+    pendingMediaWrites.set(record.id, attempt);
+    const finish = () => {
+      if (pendingMediaWrites.get(record.id) === attempt) pendingMediaWrites.delete(record.id);
+    };
+    attempt.then(finish, finish);
+    return attempt;
+  }
+
   async function addCapturedMedia(type, blob, thumbnail = null, captureContext = null) {
     galleryLoadGeneration++;
     galleryLoading = false;
@@ -1569,12 +1629,11 @@
     updateGalleryStatus();
     let stored = false;
     try {
-      await MediaStore.put(record);
-      pendingMedia.delete(id);
+      await savePendingMedia(record);
       stored = true;
     } catch (error) {
       // 保留内存备份，不清掉用户尚未成功写入的作品。
-      showToast('本机存储不可用，请立即保存作品到系统相册');
+      showToast('本机存储不可用，请重试保存或下载原文件');
     }
     updateGalleryStatus();
     if ($('gallery-panel').classList.contains('show')) updateGalleryGrid();
@@ -1675,9 +1734,14 @@
         return button;
       };
       addButton('下载原文件', 'primary', 'download', () => downloadFile(record));
-      addButton('分享', 'secondary', 'share', () => shareMedia(record));
-      addButton('存入相册', 'secondary', 'image', () => shareMedia(record));
-      addButton('删除此作品', 'secondary danger', 'trash', async () => {
+      const shareRecord = () => {
+        if (pendingMediaWrites.has(item.id)) { showToast('正在存入本机，请稍后分享'); return; }
+        return shareMedia(record);
+      };
+      const shareButton = addButton('分享', 'secondary', 'share', shareRecord);
+      const albumButton = addButton('存入相册', 'secondary', 'image', shareRecord);
+      const deleteButton = addButton('删除此作品', 'secondary danger', 'trash', async () => {
+        if (pendingMediaWrites.has(item.id)) { showToast('正在存入本机，请稍后删除'); return; }
         if (sharing || !confirm('删除此作品？已经保存到系统相册的副本不受影响。')) return;
         try {
           if (!pendingMedia.has(item.id)) await MediaStore.remove(item.id);
@@ -1721,10 +1785,65 @@
       });
       const tip = document.createElement('div');
       tip.className = 'preview-save-hint';
-      tip.textContent = pendingMedia.has(item.id)
-        ? '尚未存入本机，关闭页面会丢失，请立即保存到系统相册。'
-        : '举证请保留原文件和校验记录；相册导出或聊天转发可能改变文件。本机记录未认证。';
+      let retryButton = null;
+      const updateSaveState = () => {
+        if (generation !== previewGeneration) return;
+        const pending = pendingMedia.has(item.id);
+        const saving = pendingMediaWrites.has(item.id);
+        tip.textContent = pending
+          ? '尚未存入本机，刷新或关闭会丢失。可重试保存，或下载原文件到“文件”App，并另存校验记录。'
+          : '举证请保留原文件和校验记录；相册导出或聊天转发可能改变文件。本机记录未认证。';
+        if (retryButton) {
+          if (!pending) retryButton.remove();
+          else {
+            retryButton.disabled = saving || sharing;
+            retryButton.querySelector('span').textContent = saving ? '正在存入本机…' : '重试存入本机';
+          }
+        }
+        [deleteButton, shareButton, albumButton].forEach(button => { button.disabled = saving || sharing; });
+      };
+      const observeSave = async attempt => {
+        updateSaveState();
+        try {
+          await attempt;
+          if (generation === previewGeneration) showToast('已存入本机；重要作品仍请另存备份');
+        } catch (_) {
+          if (generation === previewGeneration) showToast('仍未存入本机，原文件暂时保留，请下载备份');
+        } finally { updateSaveState(); }
+      };
+      if (pendingMedia.has(item.id)) {
+        retryButton = addButton('重试存入本机', 'evidence-action', 'download', () => {
+          if (sharing || pendingMediaWrites.has(item.id) || !pendingMedia.has(item.id)) return;
+          observeSave(savePendingMedia(record));
+        });
+        // Reopening a pending work observes the same write, without starting a second one.
+        if (pendingMediaWrites.has(item.id)) observeSave(pendingMediaWrites.get(item.id));
+      }
+      updateSaveState();
       actions.appendChild(tip);
+      const stopNotes = {
+        'duration-limit': '已达本段时长上限，录像自动结束。请检查播放和保存状态。',
+        'size-limit': '已达本段容量上限，录像自动结束。请检查播放和保存状态。',
+        'background': '切到后台或锁屏后，本段录像已结束。请检查片段是否完整。',
+        'data-delay': '为控制本段大小，录像已提前结束。请检查播放和保存状态。',
+        'camera-interrupted': '相机中断，本段录像已结束。请检查片段是否完整。',
+        'encoder-error': '视频编码中断，本段录像已结束。请检查片段是否完整。',
+        'render-error': '画面处理中断，本段录像已结束。请检查片段是否完整。',
+        'unexpected-stop': '录像意外结束。请检查片段是否完整。',
+      };
+      const recordingDetails = record.evidence?.recording;
+      let stopNote = '';
+      if (item.type === 'video') {
+        if (recordingDetails?.interrupted) stopNote = '录制曾中断，当前片段可能不完整，请检查画面和播放。';
+        else if (Object.prototype.hasOwnProperty.call(stopNotes, recordingDetails?.stopReason)) stopNote = stopNotes[recordingDetails.stopReason];
+        if (recordingDetails?.audioInterrupted) stopNote += '录音曾中断，请检查声音是否完整。';
+      }
+      if (stopNote) {
+        const note = document.createElement('div');
+        note.className = 'preview-recording-hint';
+        note.textContent = stopNote;
+        actions.appendChild(note);
+      }
     } catch (error) {
       if (generation !== previewGeneration) return;
       container.textContent = '作品暂时无法读取，请关闭后重试。';
@@ -2155,7 +2274,7 @@
   }
 
   function suspendCamera() {
-    stopRecording();
+    stopRecording('background');
     releaseCamera();
     $('preview-media-container').querySelector('video')?.pause();
     locationNeedsResume = true;

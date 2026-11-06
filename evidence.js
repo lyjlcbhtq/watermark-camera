@@ -87,7 +87,7 @@
     const manifest = {
       schema,
       schemaVersion,
-      toolVersion: '1.6.3',
+      toolVersion: '1.7.0',
       generatedAtDeviceMs: Date.now(),
       media,
       file: { algorithm: 'SHA-256', sha256: digest, ...file },
